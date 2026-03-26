@@ -1,0 +1,201 @@
+const path = require("path");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const {
+  loadSettings,
+  saveSettings,
+  normalizeDomain,
+  readWhitelistSeed
+} = require("./src/main/settingsStore");
+const {
+  isUrlAllowed,
+  getWhitelistModel,
+  toCanonicalUrl,
+  getHostname
+} = require("./src/main/whitelistEngine");
+const { getQuoteOfTheDay } = require("./src/main/quotes");
+const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
+
+let settings = {
+  personalWhitelist: [],
+  showBookmarksBar: false,
+  showDailyQuote: true
+};
+let preApprovedDomains = [];
+
+const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+
+function resolveRendererUrl() {
+  if (DEV_SERVER_URL) {
+    return DEV_SERVER_URL;
+  }
+  return `file://${path.join(__dirname, "../dist/index.html")}`;
+}
+
+function getWhitelistSnapshot() {
+  return getWhitelistModel(preApprovedDomains, settings.personalWhitelist);
+}
+
+function getPublicSettings() {
+  return {
+    ...settings,
+    version: app.getVersion()
+  };
+}
+
+function sendToRenderer(channel, payload) {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send(channel, payload);
+}
+
+function notifyStateChanged() {
+  sendToRenderer("pagecow:state-changed", {
+    settings: getPublicSettings(),
+    whitelist: getWhitelistSnapshot()
+  });
+}
+
+function allowOrBlockNavigation(url) {
+  if (url.startsWith("devtools://")) return true;
+  if (DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL)) return true;
+  if (url.startsWith("file://")) return true;
+  if (url === "about:blank") return true;
+  return isUrlAllowed(url, preApprovedDomains, settings.personalWhitelist);
+}
+
+function installNavigationGuards(mainWindow) {
+  const wc = mainWindow.webContents;
+
+  wc.setWindowOpenHandler(({ url }) => {
+    if (allowOrBlockNavigation(url)) {
+      return { action: "allow" };
+    }
+    sendToRenderer("pagecow:blocked-navigation", { url });
+    return { action: "deny" };
+  });
+
+  wc.on("will-navigate", (event, url) => {
+    if (DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL)) return;
+    if (url.startsWith("file://")) return;
+
+    if (!allowOrBlockNavigation(url)) {
+      event.preventDefault();
+      sendToRenderer("pagecow:blocked-navigation", { url });
+    }
+  });
+}
+
+function createAndInitializeWindow() {
+  settings = loadSettings();
+  preApprovedDomains = readWhitelistSeed();
+  const mainWindow = createMainWindow(resolveRendererUrl());
+  setMainWindow(mainWindow);
+  installNavigationGuards(mainWindow);
+}
+
+app.whenReady().then(() => {
+  createAndInitializeWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createAndInitializeWindow();
+    }
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
+
+ipcMain.handle("pagecow:get-state", () => ({
+  settings: getPublicSettings(),
+  whitelist: getWhitelistSnapshot(),
+  dailyQuote: getQuoteOfTheDay(),
+  version: app.getVersion()
+}));
+
+ipcMain.handle("pagecow:navigate", (_event, rawInput) => {
+  const normalized = toCanonicalUrl(rawInput);
+  if (!normalized) {
+    return { ok: false, reason: "invalid", message: "Please enter a valid URL or domain." };
+  }
+  if (!isUrlAllowed(normalized, preApprovedDomains, settings.personalWhitelist)) {
+    return {
+      ok: false,
+      reason: "blocked",
+      url: normalized,
+      host: getHostname(normalized)
+    };
+  }
+  return { ok: true, url: normalized };
+});
+
+ipcMain.handle("pagecow:go-back", () => true);
+ipcMain.handle("pagecow:go-forward", () => true);
+ipcMain.handle("pagecow:refresh", () => true);
+
+ipcMain.handle("pagecow:open-settings", () => true);
+ipcMain.handle("pagecow:open-new-tab", () => true);
+
+ipcMain.handle("pagecow:add-personal-domain", (_event, input) => {
+  const normalized = normalizeDomain(input);
+  if (!normalized) {
+    return { ok: false, reason: "invalid_domain", message: "Please enter a valid domain." };
+  }
+  if (preApprovedDomains.includes(normalized)) {
+    return { ok: false, reason: "already_preapproved", message: "This domain is already pre-approved." };
+  }
+  if (settings.personalWhitelist.includes(normalized)) {
+    return { ok: false, reason: "already_exists", message: "This domain is already on your personal whitelist." };
+  }
+
+  settings = saveSettings({
+    ...settings,
+    personalWhitelist: [...settings.personalWhitelist, normalized]
+  });
+  notifyStateChanged();
+  return { ok: true };
+});
+
+ipcMain.handle("pagecow:remove-personal-domain", (_event, input) => {
+  const normalized = normalizeDomain(input);
+  if (!normalized) {
+    return { ok: false, reason: "invalid_domain", message: "Invalid domain." };
+  }
+
+  const next = settings.personalWhitelist.filter((domain) => domain !== normalized);
+  if (next.length === settings.personalWhitelist.length) {
+    return { ok: false, reason: "not_found", message: "Domain not found." };
+  }
+
+  settings = saveSettings({
+    ...settings,
+    personalWhitelist: next
+  });
+  notifyStateChanged();
+  return { ok: true };
+});
+
+ipcMain.handle("pagecow:update-settings", (_event, patch = {}) => {
+  settings = saveSettings({
+    ...settings,
+    showBookmarksBar:
+      typeof patch.showBookmarksBar === "boolean"
+        ? patch.showBookmarksBar
+        : settings.showBookmarksBar,
+    showDailyQuote:
+      typeof patch.showDailyQuote === "boolean"
+        ? patch.showDailyQuote
+        : settings.showDailyQuote
+  });
+  notifyStateChanged();
+  return { ok: true, settings: getPublicSettings() };
+});
+
+ipcMain.handle("pagecow:open-external", (_event, url) => {
+  if (typeof url !== "string" || !url.trim()) return false;
+  shell.openExternal(url);
+  return true;
+});

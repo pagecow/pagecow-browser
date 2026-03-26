@@ -1,0 +1,27 @@
+appId: com.pagecow.browser
+productName: PageCow
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - electron/**
+  - whitelist.json
+  - config/**
+  - blocked.json
+  - package.json
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+win:
+  target:
+    - nsis
+linux:
+  category: Office
+  target:
+    - AppImage
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
