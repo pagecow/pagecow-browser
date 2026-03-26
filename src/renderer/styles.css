@@ -136,6 +136,11 @@ input {
   text-align: center;
 }
 
+.brand-card.home {
+  text-align: left;
+  max-width: 1120px;
+}
+
 .pagecow-logo {
   width: 84px;
   height: 84px;
@@ -177,6 +182,117 @@ input {
   color: #374a40;
   font-style: italic;
   background: #fbfdf8;
+}
+
+.home-hero {
+  text-align: center;
+}
+
+.home-hero .clock {
+  margin-top: 10px;
+}
+
+.home-explainer {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  background: #fcfef9;
+  border-radius: 12px;
+  padding: 14px;
+  color: #2f4438;
+}
+
+.home-explainer p {
+  margin: 6px 0;
+}
+
+.submission-callout {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.submission-callout a {
+  color: var(--accent-strong);
+}
+
+.catalog {
+  margin-top: 20px;
+}
+
+.catalog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.catalog-head h3 {
+  margin: 0;
+}
+
+.catalog-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.catalog-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.filter-pill {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.filter-pill.active {
+  border-color: var(--accent);
+  background: #e8f7eb;
+  color: #20572d;
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+
+.catalog-site {
+  border: 1px solid #e5eee5;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fcfffb;
+  cursor: pointer;
+  text-align: left;
+}
+
+.catalog-site:hover {
+  border-color: #cbe2cb;
+  background: #f5fbf5;
+}
+
+.catalog-site-domain {
+  font-weight: 600;
+  color: #1f382c;
+  word-break: break-all;
+}
+
+.catalog-site-category {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .blocked-screen {

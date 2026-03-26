@@ -212,7 +212,10 @@ function App() {
       />
       <main className="content">
         {view === "new-tab" && (
-          <NewTabPage showQuote={state.settings.showDailyQuote} />
+          <NewTabPage
+            showQuote={state.settings.showDailyQuote}
+            preApprovedDomains={state.whitelist.preApprovedDomains}
+          />
         )}
         {view === "blocked" && (
           <BlockedPage blockedUrl={blockedUrl} onOpenSettings={handleOpenSettingsFromBlocked} />
