@@ -22,6 +22,18 @@ function BlockedPage({ blockedUrl, onOpenSettings }) {
         <button type="button" className="btn primary" onClick={onOpenSettings}>
           Add this site to my whitelist
         </button>
+        <p className="about blocked-help">
+          Missing a site? Email us at{" "}
+          <a
+            href="mailto:submission@pagecow.com"
+            onClick={(event) => {
+              event.preventDefault();
+              window.pagecow.openExternal("mailto:submission@pagecow.com");
+            }}
+          >
+            submission@pagecow.com
+          </a>
+        </p>
       </div>
     </section>
   );

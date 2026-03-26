@@ -2,6 +2,7 @@ const { normalizeDomain } = require("./settingsStore");
 
 const BLOCKED_BY_DEFAULT = new Set([
   "google.com",
+  "chatgpt.com",
   "facebook.com",
   "instagram.com",
   "twitter.com",
@@ -27,6 +28,16 @@ const BLOCKED_BY_DEFAULT = new Set([
 ]);
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
+
+function isAlwaysAllowedLocalhost(hostname) {
+  if (!hostname) return false;
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname.endsWith(".local")
+  );
+}
 
 function isDomainMatch(hostname, allowedDomain) {
   return hostname === allowedDomain || hostname.endsWith(`.${allowedDomain}`);
@@ -59,6 +70,10 @@ function isUrlAllowed(urlValue, preApprovedDomains, personalDomains) {
   const { allowedProtocol, hostname } = parseHostname(urlValue);
   if (!allowedProtocol || !hostname) {
     return false;
+  }
+
+  if (isAlwaysAllowedLocalhost(hostname)) {
+    return true;
   }
 
   const whitelist = getEffectiveWhitelist(preApprovedDomains, personalDomains);
@@ -114,6 +129,7 @@ function getHostname(urlValue) {
 
 module.exports = {
   BLOCKED_BY_DEFAULT,
+  isAlwaysAllowedLocalhost,
   isUrlAllowed,
   getEffectiveWhitelist,
   getWhitelistModel,

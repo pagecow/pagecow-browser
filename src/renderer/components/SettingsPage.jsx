@@ -149,6 +149,18 @@ function SettingsPage({
           <p>The browser that keeps you writing.</p>
           <p>Version: {version}</p>
           <p>
+            Missing a site? Email us at{" "}
+            <a
+              href="mailto:submission@pagecow.com"
+              onClick={(event) => {
+                event.preventDefault();
+                window.pagecow.openExternal("mailto:submission@pagecow.com");
+              }}
+            >
+              submission@pagecow.com
+            </a>
+          </p>
+          <p>
             Website:{" "}
             <a
               href="https://pagecow.com"

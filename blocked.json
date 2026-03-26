@@ -1,0 +1,8 @@
+{
+  "blockedDomains": [
+    {
+      "domain": "chatgpt.com",
+      "reason": "Blocked — allows adult content generation. PageCow policy: no AI platforms that permit adult image or video generation."
+    }
+  ]
+}
