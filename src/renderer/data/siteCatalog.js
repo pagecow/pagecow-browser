@@ -178,7 +178,7 @@ const CATEGORY_BY_DOMAIN = new Map([
   ["postmarkapp.com", "Developer Tools"],
   ["sendgrid.com", "Developer Tools"],
   ["twilio.com", "Developer Tools"],
-  ["lemon.squeezy.com", "Developer Tools"],
+
   ["paddle.com", "Developer Tools"],
   ["posthog.com", "Developer Tools"],
   ["sentry.io", "Developer Tools"],

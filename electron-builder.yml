@@ -7,6 +7,8 @@ files:
   - dist/**
   - electron/**
   - whitelist.json
+  - config/**
+  - blocked.json
   - package.json
 mac:
   category: public.app-category.productivity
