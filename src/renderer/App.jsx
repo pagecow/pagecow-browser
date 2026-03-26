@@ -105,6 +105,11 @@ function App() {
     setView("settings");
   }
 
+  function handleHome() {
+    setView("new-tab");
+    setAddress("");
+  }
+
   function mapError(reason) {
     if (reason === "invalid_domain") return "Please enter a valid domain like example.com";
     if (reason === "already_preapproved") return "This domain is already in the pre-approved list.";
@@ -154,13 +159,7 @@ function App() {
   }
 
   if (loading) {
-    return (
-      <div className="app-shell">
-        <main className="content">
-          <div className="brand-card">Loading PageCow...</div>
-        </main>
-      </div>
-    );
+    return <div className="loading-screen">Loading...</div>;
   }
 
   return (
@@ -174,7 +173,8 @@ function App() {
         onRefresh={handleRefresh}
         onNavigate={handleNavigate}
         onSettings={handleOpenSettings}
-        statusText={view === "blocked" ? "Blocked by PageCow policy" : "Focus mode"}
+        onHome={handleHome}
+        statusText={view === "blocked" ? "Blocked" : "Focus"}
       />
       <main className="content">
         {view === "new-tab" && (
