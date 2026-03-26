@@ -1,20 +1,14 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 function SettingsPage({
   settings,
   preApprovedDomains = [],
   personalDomains = [],
   version,
-  onAddDomain,
-  onRemoveDomain,
   onToggleBookmarksBar,
-  onToggleDailyQuote,
-  onClose
+  onClose,
+  onUpdateSettings
 }) {
-  const [newDomain, setNewDomain] = useState("");
-  const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
-
   const fullWhitelist = useMemo(() => {
     const list = [
       ...preApprovedDomains.map((domain) => ({ domain, type: "Pre-approved" })),
@@ -23,33 +17,10 @@ function SettingsPage({
     return list.sort((a, b) => a.domain.localeCompare(b.domain));
   }, [preApprovedDomains, personalDomains]);
 
-  async function handleAddDomain(event) {
-    event.preventDefault();
-    setMessage("");
-    setIsError(false);
-
-    const result = await onAddDomain(newDomain);
-    if (!result?.ok) {
-      setMessage(result?.message || "Could not add this domain.");
-      setIsError(true);
-      return;
-    }
-
-    setMessage("Site added to your personal whitelist.");
-    setNewDomain("");
-  }
-
-  async function handleRemoveDomain(domain) {
-    setMessage("");
-    setIsError(false);
-    const result = await onRemoveDomain(domain);
-    if (!result?.ok) {
-      setMessage(result?.message || "Could not remove this domain.");
-      setIsError(true);
-      return;
-    }
-    setMessage("Site removed from your personal whitelist.");
-  }
+  const handleRemoveBookmark = (domain) => {
+    const nextBookmarks = (settings.bookmarks || []).filter((b) => b !== domain);
+    onUpdateSettings({ bookmarks: nextBookmarks });
+  };
 
   return (
     <section className="settings-page">
@@ -62,56 +33,9 @@ function SettingsPage({
 
       <div className="settings-sections">
         <section className="settings-section">
-          <h3>Add a personal site</h3>
-          <p className="settings-section-hint">
-            Add work-related domains to your personal whitelist.
+          <p>
+            Would you like another site to be added to the approved list of sites? Send us an email at submissions@pagecow.com
           </p>
-          <form className="settings-form" onSubmit={handleAddDomain}>
-            <input
-              className="settings-input"
-              type="text"
-              value={newDomain}
-              onChange={(event) => setNewDomain(event.target.value)}
-              placeholder="example.com"
-              aria-label="Domain to whitelist"
-            />
-            <button type="submit" className="btn btn-primary">
-              Add
-            </button>
-          </form>
-          {message && (
-            <p
-              className={`settings-message ${isError ? "error" : "success"}`}
-              role={isError ? "alert" : "status"}
-            >
-              {message}
-            </p>
-          )}
-        </section>
-
-        <section className="settings-section">
-          <h3>Your personal sites</h3>
-          <p className="settings-section-hint">
-            Sites you&rsquo;ve added to your whitelist.
-          </p>
-          <div className="domain-list">
-            {personalDomains.length === 0 ? (
-              <div className="domain-empty">No personal sites added yet</div>
-            ) : (
-              personalDomains.map((domain) => (
-                <div className="domain-item" key={domain}>
-                  <span className="domain-name">{domain}</span>
-                  <button
-                    className="btn btn-danger btn-sm"
-                    type="button"
-                    onClick={() => handleRemoveDomain(domain)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
         </section>
 
         <section className="settings-section">
@@ -128,17 +52,31 @@ function SettingsPage({
                 <span className="toggle-slider" />
               </label>
             </div>
-            <div className="toggle-row">
-              <span className="toggle-label">Show daily quote on new tab</span>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={settings.showDailyQuote}
-                  onChange={(event) => onToggleDailyQuote(event.target.checked)}
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Your Bookmarks ({settings.bookmarks?.length || 0})</h3>
+          <p className="settings-section-hint">
+            Manage your bookmarked sites. They will appear in the bookmarks bar if it is enabled.
+          </p>
+          <div className="domain-list">
+            {(settings.bookmarks || []).length === 0 ? (
+              <div className="domain-empty">No bookmarked sites yet.</div>
+            ) : (
+              settings.bookmarks.map((domain) => (
+                <div className="domain-item" key={`bookmark:${domain}`}>
+                  <span className="domain-name">{domain}</span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    onClick={() => handleRemoveBookmark(domain)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </section>
 

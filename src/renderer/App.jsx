@@ -1,35 +1,148 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Toolbar from "./components/Toolbar";
+import TabStrip from "./components/TabStrip";
+import BookmarksBar from "./components/BookmarksBar";
 import NewTabPage from "./components/NewTabPage";
 import BlockedPage from "./components/BlockedPage";
 import SettingsPage from "./components/SettingsPage";
 
+let nextTabId = 1;
+
+function createTab(overrides = {}) {
+  return {
+    id: `tab-${nextTabId++}`,
+    type: "new-tab",
+    title: "New Tab",
+    address: "",
+    canGoBack: false,
+    canGoForward: false,
+    ...overrides
+  };
+}
+
+function getTabTitleFromUrl(url) {
+  if (!url) return "New Tab";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || "New Tab";
+  } catch {
+    return url;
+  }
+}
+
 function App() {
-  const [view, setView] = useState("new-tab");
-  const [address, setAddress] = useState("");
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
+  const initialTabRef = useRef(null);
+  if (!initialTabRef.current) {
+    initialTabRef.current = createTab();
+  }
+
+  const [tabs, setTabs] = useState([initialTabRef.current]);
+  const [activeTabId, setActiveTabId] = useState(initialTabRef.current.id);
+  const [panelView, setPanelView] = useState("tab");
   const [blockedUrl, setBlockedUrl] = useState("");
   const [state, setState] = useState({
     settings: {
       personalWhitelist: [],
       showBookmarksBar: false,
-      showDailyQuote: true
+      bookmarks: []
     },
     whitelist: {
       preApproved: [],
       personal: [],
       merged: []
     },
-    dailyQuote: "Write with focus. Edit with courage.",
     version: "1.0.0"
   });
   const [loading, setLoading] = useState(true);
-  const webviewRef = useRef(null);
+  const webviewRefs = useRef(new Map());
+  const attachedWebviews = useRef(new Set());
+  const webContentsToTabId = useRef(new Map());
+  const activeTabIdRef = useRef(activeTabId);
+
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.id === activeTabId) || tabs[0] || null,
+    [tabs, activeTabId]
+  );
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  const updateTab = useCallback((tabId, updater) => {
+    setTabs((previous) =>
+      previous.map((tab) => {
+        if (tab.id !== tabId) return tab;
+        const patch = typeof updater === "function" ? updater(tab) : updater;
+        return { ...tab, ...patch };
+      })
+    );
+  }, []);
+
+  const openTab = useCallback((overrides = {}, options = {}) => {
+    const nextTab = createTab(overrides);
+    setTabs((previous) => {
+      const insertAfterIndex = options.afterTabId
+        ? previous.findIndex((tab) => tab.id === options.afterTabId)
+        : previous.length - 1;
+
+      if (insertAfterIndex < 0) {
+        return [...previous, nextTab];
+      }
+
+      const nextTabs = [...previous];
+      nextTabs.splice(insertAfterIndex + 1, 0, nextTab);
+      return nextTabs;
+    });
+    setActiveTabId(nextTab.id);
+    setPanelView("tab");
+    return nextTab.id;
+  }, []);
+
+  const closeTab = useCallback((tabId) => {
+    webviewRefs.current.delete(tabId);
+    attachedWebviews.current.delete(tabId);
+
+    for (const [guestId, mappedTabId] of webContentsToTabId.current.entries()) {
+      if (mappedTabId === tabId) {
+        webContentsToTabId.current.delete(guestId);
+      }
+    }
+
+    setTabs((previous) => {
+      const tabIndex = previous.findIndex((tab) => tab.id === tabId);
+      if (tabIndex === -1) return previous;
+
+      const remainingTabs = previous.filter((tab) => tab.id !== tabId);
+      if (remainingTabs.length === 0) {
+        const replacementTab = createTab();
+        setActiveTabId(replacementTab.id);
+        setPanelView("tab");
+        return [replacementTab];
+      }
+
+      if (tabId === activeTabIdRef.current) {
+        const fallbackTab = remainingTabs[tabIndex] || remainingTabs[tabIndex - 1] || remainingTabs[0];
+        setActiveTabId(fallbackTab.id);
+        setPanelView("tab");
+      }
+
+      return remainingTabs;
+    });
+  }, []);
+
+  const createNewTab = useCallback(() => {
+    openTab();
+  }, [openTab]);
+
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTabId) && tabs[0]) {
+      setActiveTabId(tabs[0].id);
+    }
+  }, [tabs, activeTabId]);
 
   useEffect(() => {
     let unsubBlocked;
     let unsubState;
+    let unsubOpenInNewTab;
 
     async function bootstrapState() {
       if (!window.pagecow?.getState) {
@@ -49,8 +162,16 @@ function App() {
     }
 
     unsubBlocked = window.pagecow.onBlockedNavigation((payload) => {
+      const sourceTabId = payload?.sourceWebContentsId
+        ? webContentsToTabId.current.get(payload.sourceWebContentsId)
+        : activeTabIdRef.current;
+
+      if (sourceTabId) {
+        setActiveTabId(sourceTabId);
+      }
+
       setBlockedUrl(payload.url || "");
-      setView("blocked");
+      setPanelView("blocked");
     });
 
     unsubState = window.pagecow.onStateChanged((payload) => {
@@ -61,53 +182,126 @@ function App() {
       }));
     });
 
+    unsubOpenInNewTab = window.pagecow.onOpenUrlInNewTab((payload) => {
+      const sourceTabId = payload?.sourceWebContentsId
+        ? webContentsToTabId.current.get(payload.sourceWebContentsId)
+        : activeTabIdRef.current;
+
+      if (!payload?.url) {
+        openTab({}, { afterTabId: sourceTabId });
+        return;
+      }
+
+      openTab(
+        {
+          type: "browser",
+          address: payload.url,
+          title: getTabTitleFromUrl(payload.url)
+        },
+        { afterTabId: sourceTabId }
+      );
+    });
+
     return () => {
       if (typeof unsubBlocked === "function") unsubBlocked();
       if (typeof unsubState === "function") unsubState();
+      if (typeof unsubOpenInNewTab === "function") unsubOpenInNewTab();
     };
-  }, []);
+  }, [openTab]);
 
-  async function handleNavigate(rawValue) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      const modifierPressed = event.metaKey || event.ctrlKey;
+      if (!modifierPressed || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "t") {
+        event.preventDefault();
+        createNewTab();
+        return;
+      }
+
+      if (key === "w") {
+        event.preventDefault();
+        closeTab(activeTabIdRef.current);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [createNewTab, closeTab]);
+
+  async function handleNavigate(rawValue, targetTabId = activeTabIdRef.current) {
     if (!window.pagecow) return;
     const value = rawValue?.trim();
     if (!value) return;
+
     const result = await window.pagecow.navigate(value);
     if (!result.ok && result.reason === "blocked") {
+      if (targetTabId) {
+        setActiveTabId(targetTabId);
+      }
       setBlockedUrl(result.url || value);
-      setView("blocked");
+      setPanelView("blocked");
       return;
     }
+
     if (result.ok) {
-      setAddress(result.url);
-      setView("browser");
+      if (result.url === "about:newtab") {
+        updateTab(targetTabId, {
+          type: "new-tab",
+          title: "New Tab",
+          address: "",
+          canGoBack: false,
+          canGoForward: false
+        });
+      } else {
+        updateTab(targetTabId, {
+          type: "browser",
+          address: result.url,
+          title: getTabTitleFromUrl(result.url)
+        });
+      }
+
+      setActiveTabId(targetTabId);
+      setPanelView("tab");
     }
   }
 
   function handleRefresh() {
-    if (view === "browser" && webviewRef.current) {
-      webviewRef.current.reload();
+    const activeNode = webviewRefs.current.get(activeTabId);
+    if (panelView === "tab" && activeTab?.type === "browser" && activeNode) {
+      activeNode.reload();
     }
   }
 
   function handleGoBack() {
-    if (view === "browser" && webviewRef.current && webviewRef.current.canGoBack()) {
-      webviewRef.current.goBack();
+    const activeNode = webviewRefs.current.get(activeTabId);
+    if (panelView === "tab" && activeTab?.type === "browser" && activeNode?.canGoBack()) {
+      activeNode.goBack();
     }
   }
 
   function handleGoForward() {
-    if (view === "browser" && webviewRef.current && webviewRef.current.canGoForward()) {
-      webviewRef.current.goForward();
+    const activeNode = webviewRefs.current.get(activeTabId);
+    if (panelView === "tab" && activeTab?.type === "browser" && activeNode?.canGoForward()) {
+      activeNode.goForward();
     }
   }
 
   function handleOpenSettings() {
-    setView("settings");
+    setPanelView("settings");
   }
 
   function handleHome() {
-    setView("new-tab");
-    setAddress("");
+    updateTab(activeTabIdRef.current, {
+      type: "new-tab",
+      title: "New Tab",
+      address: "",
+      canGoBack: false,
+      canGoForward: false
+    });
+    setPanelView("tab");
   }
 
   function mapError(reason) {
@@ -137,73 +331,164 @@ function App() {
   async function handleToggleBookmarksBar(enabled) {
     await window.pagecow.updateSettings({ showBookmarksBar: enabled });
   }
-
-  async function handleToggleDailyQuote(enabled) {
-    await window.pagecow.updateSettings({ showDailyQuote: enabled });
+  
+  async function handleToggleBookmark(url) {
+    if (!url) return;
+    const { bookmarks } = state.settings;
+    const nextBookmarks = bookmarks.includes(url)
+      ? bookmarks.filter((b) => b !== url)
+      : [...bookmarks, url];
+    await window.pagecow.updateSettings({ bookmarks: nextBookmarks });
   }
 
-  function handleWebviewRef(node) {
-    if (!node || node === webviewRef.current) return;
-    webviewRef.current = node;
+  const syncTabWithWebview = useCallback((tabId, node) => {
+    if (!node) return;
 
-    node.addEventListener("did-navigate", () => {
-      setAddress(node.getURL());
-      setCanGoBack(node.canGoBack());
-      setCanGoForward(node.canGoForward());
-    });
-    node.addEventListener("did-navigate-in-page", () => {
-      setAddress(node.getURL());
-      setCanGoBack(node.canGoBack());
-      setCanGoForward(node.canGoForward());
-    });
-  }
+    const guestId = typeof node.getWebContentsId === "function" ? node.getWebContentsId() : null;
+    if (guestId) {
+      webContentsToTabId.current.set(guestId, tabId);
+    }
 
-  if (loading) {
+    const nextAddress = node.getURL() || "";
+    const nextTitle = node.getTitle?.()?.trim() || getTabTitleFromUrl(nextAddress);
+
+    updateTab(tabId, (tab) => ({
+      type: "browser",
+      address: nextAddress || tab.address,
+      title: nextTitle || tab.title,
+      canGoBack: node.canGoBack(),
+      canGoForward: node.canGoForward()
+    }));
+  }, [updateTab]);
+
+  const handleWebviewRef = useCallback((tabId, node) => {
+    if (!node) {
+      webviewRefs.current.delete(tabId);
+      attachedWebviews.current.delete(tabId);
+
+      for (const [guestId, mappedTabId] of webContentsToTabId.current.entries()) {
+        if (mappedTabId === tabId) {
+          webContentsToTabId.current.delete(guestId);
+        }
+      }
+      return;
+    }
+
+    webviewRefs.current.set(tabId, node);
+    if (attachedWebviews.current.has(tabId)) return;
+
+    attachedWebviews.current.add(tabId);
+
+    const sync = () => syncTabWithWebview(tabId, node);
+    node.addEventListener("dom-ready", sync);
+    node.addEventListener("did-finish-load", sync);
+    node.addEventListener("did-navigate", sync);
+    node.addEventListener("did-navigate-in-page", sync);
+    node.addEventListener("page-title-updated", sync);
+    node.addEventListener("did-start-loading", sync);
+    node.addEventListener("did-stop-loading", sync);
+
+    queueMicrotask(sync);
+  }, [syncTabWithWebview]);
+
+  const toolbarAddress =
+    panelView === "blocked"
+      ? blockedUrl
+      : activeTab?.type === "browser"
+        ? activeTab.address
+        : "";
+
+  const toolbarCanGoBack = panelView === "tab" && activeTab?.type === "browser" && activeTab.canGoBack;
+  const toolbarCanGoForward =
+    panelView === "tab" && activeTab?.type === "browser" && activeTab.canGoForward;
+  const showBookmarksBar = state.settings.showBookmarksBar && panelView === "tab";
+
+  if (loading || !activeTab) {
     return <div className="loading-screen">Loading...</div>;
   }
 
   return (
     <div className="app-shell">
+      <TabStrip
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelectTab={(tabId) => {
+          setActiveTabId(tabId);
+          setPanelView("tab");
+        }}
+        onCloseTab={closeTab}
+        onNewTab={createNewTab}
+      />
       <Toolbar
-        value={address}
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
+        value={toolbarAddress}
+        canGoBack={toolbarCanGoBack}
+        canGoForward={toolbarCanGoForward}
         onBack={handleGoBack}
         onForward={handleGoForward}
         onRefresh={handleRefresh}
         onNavigate={handleNavigate}
         onSettings={handleOpenSettings}
         onHome={handleHome}
-        statusText={view === "blocked" ? "Blocked" : "Focus"}
+        statusText={panelView === "settings" ? "Settings" : panelView === "blocked" ? "Blocked" : "Focus"}
+        isBookmarked={state.settings.bookmarks.includes(toolbarAddress)}
+        onToggleBookmark={() => handleToggleBookmark(toolbarAddress)}
       />
+      {showBookmarksBar && state.settings.bookmarks.length > 0 && (
+        <BookmarksBar
+          domains={state.settings.bookmarks}
+          onNavigate={(domain) => {
+            setPanelView("tab");
+            handleNavigate(domain, activeTabId);
+          }}
+        />
+      )}
       <main className="content">
-        {view === "new-tab" && (
-          <NewTabPage
-            showQuote={state.settings.showDailyQuote}
-            quote={state.dailyQuote}
-            approvedDomains={state.whitelist.preApproved}
-            onNavigate={handleNavigate}
-          />
+        <div className="tab-stage">
+          {tabs.map((tab) =>
+            tab.type === "browser" ? (
+              <div
+                key={tab.id}
+                className={`webview-wrap${tab.id === activeTabId && panelView === "tab" ? " active" : ""}`}
+              >
+                <webview
+                  ref={(node) => handleWebviewRef(tab.id, node)}
+                  src={tab.address}
+                  className="content-webview"
+                  allowpopups="true"
+                />
+              </div>
+            ) : null
+          )}
+
+          {activeTab.type === "new-tab" && (
+            <div className={`tab-page${panelView === "tab" ? " active" : ""}`}>
+              <NewTabPage
+                approvedDomains={state.whitelist.preApproved}
+                onNavigate={(value) => handleNavigate(value, activeTabId)}
+              />
+            </div>
+          )}
+        </div>
+
+        {panelView === "blocked" && (
+          <div className="content-overlay">
+            <BlockedPage blockedUrl={blockedUrl} onOpenSettings={handleOpenSettings} />
+          </div>
         )}
-        {view === "blocked" && (
-          <BlockedPage blockedUrl={blockedUrl} onOpenSettings={handleOpenSettings} />
-        )}
-        {view === "settings" && (
-          <SettingsPage
-            settings={state.settings}
-            preApprovedDomains={state.whitelist.preApproved}
-            personalDomains={state.whitelist.personal}
-            version={state.version}
+
+        {panelView === "settings" && (
+          <div className="content-overlay content-overlay-scroll">
+            <SettingsPage
+              settings={state.settings}
+              preApprovedDomains={state.whitelist.preApproved}
+              personalDomains={state.whitelist.personal}
+              version={state.version}
             onAddDomain={handleAddPersonalDomain}
             onRemoveDomain={handleRemovePersonalDomain}
             onToggleBookmarksBar={handleToggleBookmarksBar}
-            onToggleDailyQuote={handleToggleDailyQuote}
-            onClose={() => setView("new-tab")}
+            onUpdateSettings={(patch) => window.pagecow.updateSettings(patch)}
+            onClose={() => setPanelView("tab")}
           />
-        )}
-        {view === "browser" && (
-          <div className="webview-wrap">
-            <webview ref={handleWebviewRef} src={address} className="content-webview" />
           </div>
         )}
       </main>

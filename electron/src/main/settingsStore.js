@@ -5,7 +5,7 @@ const { app } = require("electron");
 const DEFAULT_SETTINGS = {
   personalWhitelist: [],
   showBookmarksBar: false,
-  showDailyQuote: true
+  bookmarks: []
 };
 
 function getSettingsPath() {
@@ -81,10 +81,7 @@ function loadSettings() {
       typeof parsed.showBookmarksBar === "boolean"
         ? parsed.showBookmarksBar
         : DEFAULT_SETTINGS.showBookmarksBar,
-    showDailyQuote:
-      typeof parsed.showDailyQuote === "boolean"
-        ? parsed.showDailyQuote
-        : DEFAULT_SETTINGS.showDailyQuote
+    bookmarks: Array.isArray(parsed.bookmarks) ? parsed.bookmarks : []
   };
 }
 
@@ -93,7 +90,7 @@ function saveSettings(settings) {
   const safe = {
     personalWhitelist: dedupeDomains(settings.personalWhitelist),
     showBookmarksBar: !!settings.showBookmarksBar,
-    showDailyQuote: settings.showDailyQuote !== false
+    bookmarks: Array.isArray(settings.bookmarks) ? settings.bookmarks : []
   };
   fs.writeFileSync(settingsPath, JSON.stringify(safe, null, 2), "utf8");
   return safe;

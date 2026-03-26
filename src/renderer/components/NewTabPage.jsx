@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { formatClock, getDayOfYear } from "../utils/date";
-import { WRITING_QUOTES } from "../data/quotes";
+import { useMemo, useState } from "react";
 import { buildCatalogEntries, availableCategoryFilters } from "../data/siteCatalog";
 
 function getFaviconUrl(domain) {
@@ -20,22 +18,8 @@ function getShortName(domain) {
     .pop();
 }
 
-function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavigate }) {
-  const [time, setTime] = useState(formatClock(new Date()));
+function NewTabPage({ approvedDomains = [], onNavigate }) {
   const [activeFilter, setActiveFilter] = useState("Popular");
-
-  useEffect(() => {
-    const tick = () => setTime(formatClock(new Date()));
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const fallbackQuote = useMemo(() => {
-    const index = getDayOfYear(new Date()) % WRITING_QUOTES.length;
-    return WRITING_QUOTES[index];
-  }, []);
-  const quote = fixedQuote || fallbackQuote;
 
   const catalogEntries = useMemo(() => {
     return buildCatalogEntries(approvedDomains);
@@ -77,22 +61,8 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavi
         <h1 className="newtab-logo">
           Page<span className="newtab-logo-accent">Cow</span>
         </h1>
-        <p className="newtab-tagline">Your distraction-free workspace</p>
-
-        <div className="newtab-clock">{time}</div>
-        <div className="newtab-date">
-          {new Date().toLocaleDateString(undefined, {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric"
-          })}
-        </div>
+        <p className="newtab-tagline">No social media. No news. No entertainment. Just focused work.</p>
       </div>
-
-      {showQuote && (
-        <blockquote className="newtab-quote">&ldquo;{quote}&rdquo;</blockquote>
-      )}
 
       <form className="newtab-search" onSubmit={handleSearchSubmit}>
         <input
@@ -150,17 +120,7 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavi
       </section>
 
       <div className="info-bar">
-        PageCow keeps you focused by only allowing approved work sites.
-        Missing a site?{" "}
-        <a
-          href="mailto:submission@pagecow.com"
-          onClick={(event) => {
-            event.preventDefault();
-            window.pagecow?.openExternal("mailto:submission@pagecow.com");
-          }}
-        >
-          Let us know
-        </a>
+        Would you like another site to be added to the approved list of sites? Send us an email at submissions@pagecow.com
       </div>
     </div>
   );

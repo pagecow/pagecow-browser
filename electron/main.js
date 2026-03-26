@@ -12,13 +12,12 @@ const {
   toCanonicalUrl,
   getHostname
 } = require("./src/main/whitelistEngine");
-const { getQuoteOfTheDay } = require("./src/main/quotes");
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
 
 let settings = {
   personalWhitelist: [],
   showBookmarksBar: false,
-  showDailyQuote: true
+  bookmarks: []
 };
 let preApprovedDomains = [];
 
@@ -85,12 +84,46 @@ function installNavigationGuards(mainWindow) {
   });
 }
 
+function installGuestNavigationGuards(mainWindow) {
+  mainWindow.webContents.on("did-attach-webview", (_event, guestContents) => {
+    guestContents.setWindowOpenHandler(({ url }) => {
+      if (!allowOrBlockNavigation(url)) {
+        sendToRenderer("pagecow:blocked-navigation", {
+          url,
+          sourceWebContentsId: guestContents.id
+        });
+        return { action: "deny" };
+      }
+
+      sendToRenderer("pagecow:open-url-in-new-tab", {
+        url,
+        sourceWebContentsId: guestContents.id
+      });
+      return { action: "deny" };
+    });
+
+    const preventBlockedNavigation = (event, url) => {
+      if (!allowOrBlockNavigation(url)) {
+        event.preventDefault();
+        sendToRenderer("pagecow:blocked-navigation", {
+          url,
+          sourceWebContentsId: guestContents.id
+        });
+      }
+    };
+
+    guestContents.on("will-navigate", preventBlockedNavigation);
+    guestContents.on("will-redirect", preventBlockedNavigation);
+  });
+}
+
 function createAndInitializeWindow() {
   settings = loadSettings();
   preApprovedDomains = readWhitelistSeed();
   const mainWindow = createMainWindow(resolveRendererUrl());
   setMainWindow(mainWindow);
   installNavigationGuards(mainWindow);
+  installGuestNavigationGuards(mainWindow);
 }
 
 app.whenReady().then(() => {
@@ -112,7 +145,6 @@ app.on("window-all-closed", () => {
 ipcMain.handle("pagecow:get-state", () => ({
   settings: getPublicSettings(),
   whitelist: getWhitelistSnapshot(),
-  dailyQuote: getQuoteOfTheDay(),
   version: app.getVersion()
 }));
 
@@ -184,11 +216,7 @@ ipcMain.handle("pagecow:update-settings", (_event, patch = {}) => {
     showBookmarksBar:
       typeof patch.showBookmarksBar === "boolean"
         ? patch.showBookmarksBar
-        : settings.showBookmarksBar,
-    showDailyQuote:
-      typeof patch.showDailyQuote === "boolean"
-        ? patch.showDailyQuote
-        : settings.showDailyQuote
+        : settings.showBookmarksBar
   });
   notifyStateChanged();
   return { ok: true, settings: getPublicSettings() };

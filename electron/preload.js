@@ -26,5 +26,6 @@ contextBridge.exposeInMainWorld("pagecow", {
   openExternal: (url) => ipcRenderer.invoke("pagecow:open-external", url),
 
   onBlockedNavigation: (callback) => subscribe("pagecow:blocked-navigation", callback),
-  onStateChanged: (callback) => subscribe("pagecow:state-changed", callback)
+  onStateChanged: (callback) => subscribe("pagecow:state-changed", callback),
+  onOpenUrlInNewTab: (callback) => subscribe("pagecow:open-url-in-new-tab", callback)
 });

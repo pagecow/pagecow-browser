@@ -34,16 +34,8 @@ function BlockedPage({ blockedUrl, onOpenSettings }) {
           </button>
         </div>
         <p className="blocked-footer">
-          Need this site for work?{" "}
-          <a
-            href="mailto:submission@pagecow.com"
-            onClick={(event) => {
-              event.preventDefault();
-              window.pagecow?.openExternal("mailto:submission@pagecow.com");
-            }}
-          >
-            Request access
-          </a>
+          Need this site for work? Submit a request to add it to the approved list by emailing <a href="mailto:submissions@pagecow.com">submissions@pagecow.com</a>
+          
         </p>
       </div>
     </section>
