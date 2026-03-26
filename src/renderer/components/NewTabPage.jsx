@@ -3,14 +3,29 @@ import { formatClock, getDayOfYear } from "../utils/date";
 import { WRITING_QUOTES } from "../data/quotes";
 import { buildCatalogEntries, availableCategoryFilters } from "../data/siteCatalog";
 
+function getFaviconUrl(domain) {
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+}
+
+function getDomainInitial(domain) {
+  const clean = domain.replace(/^www\./, "");
+  return clean.charAt(0).toUpperCase();
+}
+
+function getShortName(domain) {
+  return domain
+    .replace(/^www\./, "")
+    .replace(/\.(com|org|net|io|app|dev|ai|co|us|me)$/, "")
+    .split(".")
+    .pop();
+}
+
 function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavigate }) {
   const [time, setTime] = useState(formatClock(new Date()));
   const [activeFilter, setActiveFilter] = useState("Popular");
 
   useEffect(() => {
-    const tick = () => {
-      setTime(formatClock(new Date()));
-    };
+    const tick = () => setTime(formatClock(new Date()));
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
@@ -35,7 +50,7 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavi
     if (activeFilter === "Popular") {
       const popular = catalogEntries.filter((entry) => entry.popular);
       if (popular.length > 0) return popular;
-      return catalogEntries.slice(0, 24);
+      return catalogEntries.slice(0, 12);
     }
     return catalogEntries.filter((entry) => entry.category === activeFilter);
   }, [activeFilter, catalogEntries]);
@@ -48,82 +63,104 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavi
     }
   }
 
+  function handleSearchSubmit(event) {
+    event.preventDefault();
+    const value = event.target.elements.searchInput?.value?.trim();
+    if (value && onNavigate) {
+      onNavigate(value);
+    }
+  }
+
   return (
-    <div className="center-screen">
-      <div className="brand-card home">
-        <div className="home-hero">
-          <div className="pagecow-logo" aria-hidden>
-            🐄
-          </div>
-          <h1 className="app-title">PageCow</h1>
-          <p className="tagline">The browser that keeps you writing</p>
-          <div className="clock">{time}</div>
-          <div className="date-row">
-            {new Date().toLocaleDateString(undefined, {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric"
-            })}
-          </div>
+    <div className="newtab">
+      <div className="newtab-hero">
+        <h1 className="newtab-logo">
+          Page<span className="newtab-logo-accent">Cow</span>
+        </h1>
+        <p className="newtab-tagline">Your distraction-free workspace</p>
+
+        <div className="newtab-clock">{time}</div>
+        <div className="newtab-date">
+          {new Date().toLocaleDateString(undefined, {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}
+        </div>
+      </div>
+
+      {showQuote && (
+        <blockquote className="newtab-quote">&ldquo;{quote}&rdquo;</blockquote>
+      )}
+
+      <form className="newtab-search" onSubmit={handleSearchSubmit}>
+        <input
+          name="searchInput"
+          className="search-box"
+          type="text"
+          placeholder="Enter a work site URL..."
+          aria-label="Navigate to a site"
+        />
+      </form>
+
+      <section className="shortcuts">
+        <div className="shortcuts-header">
+          <span className="shortcuts-title">Approved sites</span>
+          <span className="shortcuts-count">{catalogEntries.length} sites</span>
         </div>
 
-        {showQuote && <blockquote className="quote">&ldquo;{quote}&rdquo;</blockquote>}
-
-        <section className="home-explainer">
-          <p>
-            PageCow is a distraction-free work browser with a curated approved-site list. Every
-            website request is checked against that list so social media, entertainment, and other
-            off-task destinations stay out of your workflow.
-          </p>
-          <p className="submission-callout">
-            Missing a work site? Email{" "}
-            <a
-              href="mailto:submission@pagecow.com"
-              onClick={(event) => {
-                event.preventDefault();
-                window.pagecow?.openExternal("mailto:submission@pagecow.com");
-              }}
+        <div className="shortcuts-filters">
+          {filterOrder.map((filterKey) => (
+            <button
+              key={filterKey}
+              type="button"
+              className={`filter-chip${activeFilter === filterKey ? " active" : ""}`}
+              onClick={() => setActiveFilter(filterKey)}
             >
-              submission@pagecow.com
-            </a>{" "}
-            and we can review it for approval.
-          </p>
-        </section>
+              {filterKey}
+            </button>
+          ))}
+        </div>
 
-        <section className="catalog">
-          <div className="catalog-head">
-            <h3>Approved Sites</h3>
-            <span className="catalog-count">{catalogEntries.length} sites</span>
-          </div>
-          <div className="catalog-filters">
-            {filterOrder.map((filterKey) => (
-              <button
-                key={filterKey}
-                type="button"
-                className={`filter-pill${activeFilter === filterKey ? " active" : ""}`}
-                onClick={() => setActiveFilter(filterKey)}
-              >
-                {filterKey}
-              </button>
-            ))}
-          </div>
+        <div className="shortcuts-grid" role="list">
+          {visibleEntries.map((entry) => (
+            <button
+              key={entry.domain}
+              type="button"
+              className="shortcut-tile"
+              role="listitem"
+              onClick={() => handleSiteClick(entry.domain)}
+              title={entry.domain}
+            >
+              <div className="shortcut-icon">
+                <img
+                  src={getFaviconUrl(entry.domain)}
+                  alt=""
+                  onError={(e) => {
+                    e.target.style.display = "none";
+                    e.target.parentElement.textContent = getDomainInitial(entry.domain);
+                  }}
+                />
+              </div>
+              <span className="shortcut-label">{getShortName(entry.domain)}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
-          <div className="catalog-grid" role="list">
-            {visibleEntries.map((entry) => (
-              <button
-                key={entry.domain}
-                type="button"
-                className="catalog-site"
-                role="listitem"
-                onClick={() => handleSiteClick(entry.domain)}
-              >
-                <div className="catalog-site-domain">{entry.domain}</div>
-                <div className="catalog-site-category">{entry.category}</div>
-              </button>
-            ))}
-          </div>
-        </section>
+      <div className="info-bar">
+        PageCow keeps you focused by only allowing approved work sites.
+        Missing a site?{" "}
+        <a
+          href="mailto:submission@pagecow.com"
+          onClick={(event) => {
+            event.preventDefault();
+            window.pagecow?.openExternal("mailto:submission@pagecow.com");
+          }}
+        >
+          Let us know
+        </a>
       </div>
     </div>
   );

@@ -17,16 +17,9 @@ function SettingsPage({
 
   const fullWhitelist = useMemo(() => {
     const list = [
-      ...preApprovedDomains.map((domain) => ({
-        domain,
-        type: "Pre-approved"
-      })),
-      ...personalDomains.map((domain) => ({
-        domain,
-        type: "Personal"
-      }))
+      ...preApprovedDomains.map((domain) => ({ domain, type: "Pre-approved" })),
+      ...personalDomains.map((domain) => ({ domain, type: "Personal" }))
     ];
-
     return list.sort((a, b) => a.domain.localeCompare(b.domain));
   }, [preApprovedDomains, personalDomains]);
 
@@ -59,102 +52,118 @@ function SettingsPage({
   }
 
   return (
-    <section className="settings-wrap">
-      <div className="settings-card">
-        <header className="settings-head">
-          <h2>Settings</h2>
-          <button className="btn" type="button" onClick={onClose}>
-            Done
-          </button>
-        </header>
+    <section className="settings-page">
+      <header className="settings-header">
+        <h2>Settings</h2>
+        <button className="btn" type="button" onClick={onClose}>
+          Done
+        </button>
+      </header>
 
-        <div className="settings-grid">
-          <section className="settings-section">
-            <h3>Add personal whitelist site</h3>
-            <form className="inline-form" onSubmit={handleAddDomain}>
-              <input
-                className="inline-input"
-                type="text"
-                value={newDomain}
-                onChange={(event) => setNewDomain(event.target.value)}
-                placeholder="example.com"
-                aria-label="Domain to whitelist"
-              />
-              <button type="submit" className="btn primary">
-                Add site
-              </button>
-            </form>
-            {message && (
-              <p className={isError ? "error" : "about"} role={isError ? "alert" : "status"}>
-                {message}
-              </p>
-            )}
-          </section>
+      <div className="settings-sections">
+        <section className="settings-section">
+          <h3>Add a personal site</h3>
+          <p className="settings-section-hint">
+            Add work-related domains to your personal whitelist.
+          </p>
+          <form className="settings-form" onSubmit={handleAddDomain}>
+            <input
+              className="settings-input"
+              type="text"
+              value={newDomain}
+              onChange={(event) => setNewDomain(event.target.value)}
+              placeholder="example.com"
+              aria-label="Domain to whitelist"
+            />
+            <button type="submit" className="btn btn-primary">
+              Add
+            </button>
+          </form>
+          {message && (
+            <p
+              className={`settings-message ${isError ? "error" : "success"}`}
+              role={isError ? "alert" : "status"}
+            >
+              {message}
+            </p>
+          )}
+        </section>
 
-          <section className="settings-section">
-            <h3>Your personal sites</h3>
-            <div className="domain-list">
-              {personalDomains.length === 0 ? (
-                <div className="domain-item">
-                  <span className="about">No personal sites yet.</span>
+        <section className="settings-section">
+          <h3>Your personal sites</h3>
+          <p className="settings-section-hint">
+            Sites you&rsquo;ve added to your whitelist.
+          </p>
+          <div className="domain-list">
+            {personalDomains.length === 0 ? (
+              <div className="domain-empty">No personal sites added yet</div>
+            ) : (
+              personalDomains.map((domain) => (
+                <div className="domain-item" key={domain}>
+                  <span className="domain-name">{domain}</span>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    type="button"
+                    onClick={() => handleRemoveDomain(domain)}
+                  >
+                    Remove
+                  </button>
                 </div>
-              ) : (
-                personalDomains.map((domain) => (
-                  <div className="domain-item" key={domain}>
-                    <span className="domain-name">{domain}</span>
-                    <button
-                      className="remove-btn"
-                      type="button"
-                      onClick={() => handleRemoveDomain(domain)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+              ))
+            )}
+          </div>
+        </section>
 
-          <section className="settings-section">
-            <h3>Display options</h3>
-            <div className="toggles">
-              <label className="toggle">
+        <section className="settings-section">
+          <h3>Preferences</h3>
+          <div className="toggle-group">
+            <div className="toggle-row">
+              <span className="toggle-label">Show bookmarks bar</span>
+              <label className="toggle-switch">
                 <input
                   type="checkbox"
                   checked={settings.showBookmarksBar}
                   onChange={(event) => onToggleBookmarksBar(event.target.checked)}
                 />
-                Show bookmarks bar
+                <span className="toggle-slider" />
               </label>
-              <label className="toggle">
+            </div>
+            <div className="toggle-row">
+              <span className="toggle-label">Show daily quote on new tab</span>
+              <label className="toggle-switch">
                 <input
                   type="checkbox"
                   checked={settings.showDailyQuote}
                   onChange={(event) => onToggleDailyQuote(event.target.checked)}
                 />
-                Show daily writing quote on new tab
+                <span className="toggle-slider" />
               </label>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="settings-section">
-            <h3>Full whitelist ({fullWhitelist.length})</h3>
-            <div className="domain-list">
-              {fullWhitelist.map((entry) => (
-                <div className="domain-item" key={`${entry.type}:${entry.domain}`}>
-                  <span className="domain-name">{entry.domain}</span>
-                  <span className="domain-meta">{entry.type}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+        <section className="settings-section">
+          <h3>All approved sites ({fullWhitelist.length})</h3>
+          <p className="settings-section-hint">
+            Complete list of sites you can access in PageCow.
+          </p>
+          <div className="domain-list">
+            {fullWhitelist.map((entry) => (
+              <div className="domain-item" key={`${entry.type}:${entry.domain}`}>
+                <span className="domain-name">{entry.domain}</span>
+                <span className="domain-meta">{entry.type}</span>
+              </div>
+            ))}
+          </div>
+        </section>
 
-          <section className="about">
-            <h3>About PageCow</h3>
-            <p>The browser that keeps you writing.</p>
-            <p>Version: {version}</p>
+        <section className="settings-section">
+          <h3>About PageCow</h3>
+          <div className="about-section">
+            <p>The distraction-free browser for focused work.</p>
+            <p>Version {version}</p>
             <p>
-              Missing a site? Email us at{" "}
+              Need a site approved?{" "}
               <a
                 href="mailto:submission@pagecow.com"
                 onClick={(event) => {
@@ -166,7 +175,6 @@ function SettingsPage({
               </a>
             </p>
             <p>
-              Website:{" "}
               <a
                 href="https://pagecow.com"
                 onClick={(event) => {
@@ -177,8 +185,8 @@ function SettingsPage({
                 pagecow.com
               </a>
             </p>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
     </section>
   );
