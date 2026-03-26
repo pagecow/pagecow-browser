@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { displayNameForDomain } from "../data/domainDisplayName";
 
 function getFaviconUrl(url) {
   try {
@@ -9,49 +10,136 @@ function getFaviconUrl(url) {
   }
 }
 
-function getShortName(url) {
-  let hostname = url;
-  try {
-    hostname = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
-  } catch {}
-  
-  return hostname
-    .replace(/^www\./, "")
-    .replace(/\.(com|org|net|io|app|dev|ai|co|us|me)$/, "")
-    .split(".")
-    .pop();
-}
+function BookmarksBar({ domains = [], onNavigate, onReorder, onRemove }) {
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const menuRef = useRef(null);
+  const dragNode = useRef(null);
+  const didDrag = useRef(false);
 
-function BookmarksBar({ domains = [], onNavigate }) {
-  const bookmarks = useMemo(() => {
-    return domains.map((url) => ({
-      url,
-      popular: false 
-    })).sort((left, right) => {
-      return left.url.localeCompare(right.url);
+  const closeMenu = useCallback(() => setContextMenu(null), []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        closeMenu();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [contextMenu, closeMenu]);
+
+  function handleContextMenu(e, url) {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, url });
+  }
+
+  function handleDragStart(e, index) {
+    setDragIndex(index);
+    didDrag.current = false;
+    dragNode.current = e.currentTarget;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    requestAnimationFrame(() => {
+      if (dragNode.current) {
+        dragNode.current.classList.add("dragging");
+      }
     });
-  }, [domains]);
+  }
 
-  if (bookmarks.length === 0) {
+  function handleDragOver(e, index) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (index !== overIndex) {
+      setOverIndex(index);
+    }
+    if (index !== dragIndex) {
+      didDrag.current = true;
+    }
+  }
+
+  function handleDragEnd() {
+    if (dragNode.current) {
+      dragNode.current.classList.remove("dragging");
+    }
+
+    if (
+      dragIndex !== null &&
+      overIndex !== null &&
+      dragIndex !== overIndex &&
+      onReorder
+    ) {
+      const reordered = [...domains];
+      const [moved] = reordered.splice(dragIndex, 1);
+      reordered.splice(overIndex, 0, moved);
+      onReorder(reordered);
+    }
+
+    setDragIndex(null);
+    setOverIndex(null);
+    dragNode.current = null;
+  }
+
+  function handleClick(url) {
+    if (!didDrag.current) {
+      onNavigate(url);
+    }
+    didDrag.current = false;
+  }
+
+  if (domains.length === 0) {
     return null;
   }
 
   return (
     <div className="bookmarks-bar" role="toolbar" aria-label="Bookmarks bar">
       <div className="bookmarks-bar-scroll">
-        {bookmarks.map((bookmark) => (
+        {domains.map((url, index) => (
           <button
-            key={bookmark.url}
+            key={url}
             type="button"
-            className="bookmark-item"
-            onClick={() => onNavigate(bookmark.url)}
-            title={bookmark.url}
+            className={`bookmark-item${
+              dragIndex !== null && overIndex === index && dragIndex !== index
+                ? index < dragIndex
+                  ? " drop-before"
+                  : " drop-after"
+                : ""
+            }`}
+            draggable
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDragEnd={handleDragEnd}
+            onClick={() => handleClick(url)}
+            onContextMenu={(e) => handleContextMenu(e, url)}
+            title={url}
           >
-            <img className="bookmark-icon" src={getFaviconUrl(bookmark.url)} alt="" />
-            <span className="bookmark-label">{getShortName(bookmark.url)}</span>
+            <img className="bookmark-icon" src={getFaviconUrl(url)} alt="" />
+            <span className="bookmark-label">{displayNameForDomain(url)}</span>
           </button>
         ))}
       </div>
+
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="bookmark-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+          <button
+            type="button"
+            className="bookmark-context-item"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              onRemove(contextMenu.url);
+              closeMenu();
+            }}
+          >
+            Remove bookmark
+          </button>
+        </div>
+      )}
     </div>
   );
 }

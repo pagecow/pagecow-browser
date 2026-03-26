@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { displayNameForDomain } from "../data/domainDisplayName";
 import { buildCatalogEntries, availableCategoryFilters } from "../data/siteCatalog";
 
 function getFaviconUrl(domain) {
@@ -10,16 +11,9 @@ function getDomainInitial(domain) {
   return clean.charAt(0).toUpperCase();
 }
 
-function getShortName(domain) {
-  return domain
-    .replace(/^www\./, "")
-    .replace(/\.(com|org|net|io|app|dev|ai|co|us|me)$/, "")
-    .split(".")
-    .pop();
-}
-
 function NewTabPage({ approvedDomains = [], onNavigate }) {
   const [activeFilter, setActiveFilter] = useState("Popular");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const catalogEntries = useMemo(() => {
     return buildCatalogEntries(approvedDomains);
@@ -30,14 +24,26 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
     return ["Popular", ...categories];
   }, [catalogEntries]);
 
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const term = searchQuery.toLowerCase().trim();
+    return catalogEntries.filter((entry) => {
+      const domain = entry.domain.toLowerCase();
+      const label = displayNameForDomain(entry.domain).toLowerCase();
+      const name = domain.split(".")[0];
+      return name.includes(term) || domain.includes(term) || label.includes(term);
+    });
+  }, [searchQuery, catalogEntries]);
+
   const visibleEntries = useMemo(() => {
+    if (searchResults) return searchResults;
     if (activeFilter === "Popular") {
       const popular = catalogEntries.filter((entry) => entry.popular);
       if (popular.length > 0) return popular;
       return catalogEntries.slice(0, 12);
     }
     return catalogEntries.filter((entry) => entry.category === activeFilter);
-  }, [activeFilter, catalogEntries]);
+  }, [activeFilter, catalogEntries, searchResults]);
 
   function handleSiteClick(domain) {
     if (onNavigate) {
@@ -50,7 +56,12 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
   function handleSearchSubmit(event) {
     event.preventDefault();
     const value = event.target.elements.searchInput?.value?.trim();
-    if (value && onNavigate) {
+    if (!value) return;
+    if (searchResults && searchResults.length === 1) {
+      onNavigate(searchResults[0].domain);
+      return;
+    }
+    if (onNavigate) {
       onNavigate(value);
     }
   }
@@ -61,7 +72,7 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
         <h1 className="newtab-logo">
           Page<span className="newtab-logo-accent">Cow</span>
         </h1>
-        <p className="newtab-tagline">No social media. No news. No entertainment. Just focused work.</p>
+        <p className="newtab-tagline">No distractions. Just focused work.</p>
       </div>
 
       <form className="newtab-search" onSubmit={handleSearchSubmit}>
@@ -69,17 +80,24 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
           name="searchInput"
           className="search-box"
           type="text"
-          placeholder="Enter a work site URL..."
-          aria-label="Navigate to a site"
+          placeholder="Search approved sites..."
+          aria-label="Search approved sites"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
         />
       </form>
 
       <section className="shortcuts">
         <div className="shortcuts-header">
-          <span className="shortcuts-title">Approved sites</span>
-          <span className="shortcuts-count">{catalogEntries.length} sites</span>
+          <span className="shortcuts-title">
+            {searchResults ? `Results for "${searchQuery.trim()}"` : "Approved sites"}
+          </span>
+          <span className="shortcuts-count">
+            {searchResults ? `${searchResults.length} found` : `${catalogEntries.length} sites`}
+          </span>
         </div>
 
+        {!searchResults && (
         <div className="shortcuts-filters">
           {filterOrder.map((filterKey) => (
             <button
@@ -92,6 +110,7 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
             </button>
           ))}
         </div>
+        )}
 
         <div className="shortcuts-grid" role="list">
           {visibleEntries.map((entry) => (
@@ -113,7 +132,7 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
                   }}
                 />
               </div>
-              <span className="shortcut-label">{getShortName(entry.domain)}</span>
+              <span className="shortcut-label">{displayNameForDomain(entry.domain)}</span>
             </button>
           ))}
         </div>

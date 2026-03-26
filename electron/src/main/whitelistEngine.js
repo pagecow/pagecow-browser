@@ -127,6 +127,38 @@ function getHostname(urlValue) {
   return parsed.hostname || "";
 }
 
+function looksLikeSearchTerm(input) {
+  if (!input || typeof input !== "string") return false;
+  const trimmed = input.trim();
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return false;
+  return !trimmed.includes(".");
+}
+
+function findBestWhitelistMatch(searchTerm, preApprovedDomains, personalDomains) {
+  if (!searchTerm || typeof searchTerm !== "string") return null;
+  const term = searchTerm.toLowerCase().trim();
+  if (!term) return null;
+
+  const whitelist = getEffectiveWhitelist(preApprovedDomains, personalDomains);
+
+  const scored = whitelist
+    .map((domain) => {
+      const lower = domain.toLowerCase();
+      const namePart = lower.split(".")[0];
+      let score = 0;
+      if (namePart === term) score = 100;
+      else if (lower.startsWith(term)) score = 80;
+      else if (namePart.includes(term)) score = 60;
+      else if (lower.includes(term)) score = 40;
+      return { domain, score };
+    })
+    .filter((s) => s.score > 0);
+
+  if (scored.length === 0) return null;
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].domain;
+}
+
 module.exports = {
   BLOCKED_BY_DEFAULT,
   isAlwaysAllowedLocalhost,
@@ -136,5 +168,7 @@ module.exports = {
   toCanonicalUrl,
   parseHostname,
   isDomainMatch,
-  getHostname
+  getHostname,
+  looksLikeSearchTerm,
+  findBestWhitelistMatch
 };

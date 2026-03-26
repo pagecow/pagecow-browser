@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const BackIcon = () => (
   <svg viewBox="0 0 24 24">
@@ -40,6 +40,10 @@ const StarIcon = ({ filled }) => (
   </svg>
 );
 
+function getFaviconUrl(domain) {
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+}
+
 function Toolbar({
   value,
   canGoBack,
@@ -52,17 +56,87 @@ function Toolbar({
   onHome,
   statusText,
   isBookmarked,
-  onToggleBookmark
+  onToggleBookmark,
+  approvedDomains
 }) {
   const [inputValue, setInputValue] = useState(value || "");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const wrapRef = useRef(null);
 
   useEffect(() => {
     setInputValue(value || "");
   }, [value]);
 
+  const suggestions = useMemo(() => {
+    if (!showSuggestions || !inputValue.trim()) return [];
+    const term = inputValue.toLowerCase().trim();
+    if (term.startsWith("http://") || term.startsWith("https://")) return [];
+    const domains = approvedDomains || [];
+    return domains
+      .map((domain) => {
+        const lower = domain.toLowerCase();
+        const name = lower.split(".")[0];
+        let score = 0;
+        if (name === term) score = 100;
+        else if (lower === term) score = 95;
+        else if (name.startsWith(term)) score = 80;
+        else if (lower.startsWith(term)) score = 75;
+        else if (name.includes(term)) score = 60;
+        else if (lower.includes(term)) score = 40;
+        return { domain, score };
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((s) => s.domain);
+  }, [inputValue, showSuggestions, approvedDomains]);
+
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [suggestions]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function navigateTo(domain) {
+    setShowSuggestions(false);
+    setInputValue(domain);
+    onNavigate(domain);
+  }
+
   function handleSubmit(event) {
     event.preventDefault();
+    if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+      navigateTo(suggestions[selectedIndex]);
+      return;
+    }
+    if (suggestions.length > 0) {
+      navigateTo(suggestions[0]);
+      return;
+    }
+    setShowSuggestions(false);
     onNavigate(inputValue);
+  }
+
+  function handleKeyDown(e) {
+    if (!showSuggestions || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((i) => (i < suggestions.length - 1 ? i + 1 : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((i) => (i > 0 ? i - 1 : suggestions.length - 1));
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+    }
   }
 
   const isBlocked = statusText && statusText.toLowerCase().includes("blocked");
@@ -112,14 +186,20 @@ function Toolbar({
       </button>
 
       <form className="toolbar-address" onSubmit={handleSubmit}>
-        <div className="omnibox-wrap">
+        <div className="omnibox-wrap" ref={wrapRef}>
           <input
             className="omnibox"
             type="text"
             value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
+            onChange={(event) => {
+              setInputValue(event.target.value);
+              setShowSuggestions(true);
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onKeyDown={handleKeyDown}
             placeholder="Search or enter a work site URL"
             aria-label="Address bar"
+            autoComplete="off"
           />
           {value && (
             <button
@@ -134,12 +214,37 @@ function Toolbar({
               <StarIcon filled={isBookmarked} />
             </button>
           )}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="omnibox-dropdown">
+              {suggestions.map((domain, index) => (
+                <button
+                  key={domain}
+                  type="button"
+                  className={`omnibox-suggestion${index === selectedIndex ? " selected" : ""}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    navigateTo(domain);
+                  }}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                >
+                  <img
+                    className="omnibox-suggestion-icon"
+                    src={getFaviconUrl(domain)}
+                    alt=""
+                    width="16"
+                    height="16"
+                  />
+                  <span className="omnibox-suggestion-domain">{domain}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </form>
 
-      <span className={`status-pill${isBlocked ? " blocked" : ""}`}>
-        {statusText || "Focus mode"}
-      </span>
+      {statusText ? (
+        <span className={`status-pill${isBlocked ? " blocked" : ""}`}>{statusText}</span>
+      ) : null}
 
       <button
         type="button"

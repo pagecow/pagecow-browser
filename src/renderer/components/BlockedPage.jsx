@@ -16,7 +16,7 @@ const BlockedIcon = () => (
   </svg>
 );
 
-function BlockedPage({ blockedUrl, onOpenSettings }) {
+function BlockedPage({ blockedUrl }) {
   return (
     <section className="blocked-screen">
       <div className="blocked-card">
@@ -28,14 +28,8 @@ function BlockedPage({ blockedUrl, onOpenSettings }) {
           PageCow only allows access to approved work sites to help you stay focused.
         </p>
         <div className="blocked-domain">{extractHost(blockedUrl)}</div>
-        <div className="blocked-actions">
-          <button type="button" className="btn btn-primary" onClick={onOpenSettings}>
-            Open Settings
-          </button>
-        </div>
         <p className="blocked-footer">
           Need this site for work? Submit a request to add it to the approved list by emailing <a href="mailto:submissions@pagecow.com">submissions@pagecow.com</a>
-          
         </p>
       </div>
     </section>

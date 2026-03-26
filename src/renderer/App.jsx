@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Toolbar from "./components/Toolbar";
 import TabStrip from "./components/TabStrip";
 import BookmarksBar from "./components/BookmarksBar";
 import NewTabPage from "./components/NewTabPage";
 import BlockedPage from "./components/BlockedPage";
 import SettingsPage from "./components/SettingsPage";
+import FindBar from "./components/FindBar";
 
 let nextTabId = 1;
 
@@ -28,6 +29,37 @@ function getTabTitleFromUrl(url) {
     return url;
   }
 }
+
+const TabView = React.memo(({ tabId, initialSrc, isActive, onWebviewRef }) => {
+  const nodeRef = useRef(null);
+
+  const refCallback = useCallback((node) => {
+    nodeRef.current = node;
+    onWebviewRef(tabId, node);
+  }, [tabId, onWebviewRef]);
+
+  return (
+    <div
+      className="webview-wrap"
+      style={{
+        visibility: isActive ? "visible" : "hidden",
+        zIndex: isActive ? 1 : 0,
+        pointerEvents: isActive ? "auto" : "none"
+      }}
+    >
+      <webview
+        ref={refCallback}
+        src={initialSrc}
+        className="content-webview"
+        allowpopups="true"
+      />
+    </div>
+  );
+}, (prev, next) => {
+  return prev.tabId === next.tabId
+    && prev.isActive === next.isActive
+    && prev.onWebviewRef === next.onWebviewRef;
+});
 
 function App() {
   const initialTabRef = useRef(null);
@@ -53,15 +85,22 @@ function App() {
     version: "1.0.0"
   });
   const [loading, setLoading] = useState(true);
+  const [showFindBar, setShowFindBar] = useState(false);
   const webviewRefs = useRef(new Map());
   const attachedWebviews = useRef(new Set());
   const webContentsToTabId = useRef(new Map());
   const activeTabIdRef = useRef(activeTabId);
+  const initialSrcs = useRef(new Map());
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) || tabs[0] || null,
     [tabs, activeTabId]
   );
+
+  const activeWebviewRef = useRef(null);
+  useEffect(() => {
+    activeWebviewRef.current = webviewRefs.current.get(activeTabId) || null;
+  });
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
@@ -79,6 +118,9 @@ function App() {
 
   const openTab = useCallback((overrides = {}, options = {}) => {
     const nextTab = createTab(overrides);
+    if (nextTab.type === "browser" && nextTab.address) {
+      initialSrcs.current.set(nextTab.id, nextTab.address);
+    }
     setTabs((previous) => {
       const insertAfterIndex = options.afterTabId
         ? previous.findIndex((tab) => tab.id === options.afterTabId)
@@ -100,6 +142,7 @@ function App() {
   const closeTab = useCallback((tabId) => {
     webviewRefs.current.delete(tabId);
     attachedWebviews.current.delete(tabId);
+    initialSrcs.current.delete(tabId);
 
     for (const [guestId, mappedTabId] of webContentsToTabId.current.entries()) {
       if (mappedTabId === tabId) {
@@ -224,6 +267,12 @@ function App() {
       if (key === "w") {
         event.preventDefault();
         closeTab(activeTabIdRef.current);
+        return;
+      }
+
+      if (key === "f") {
+        event.preventDefault();
+        setShowFindBar(true);
       }
     }
 
@@ -256,11 +305,17 @@ function App() {
           canGoForward: false
         });
       } else {
-        updateTab(targetTabId, {
-          type: "browser",
-          address: result.url,
-          title: getTabTitleFromUrl(result.url)
-        });
+        const existingNode = webviewRefs.current.get(targetTabId);
+        if (existingNode) {
+          existingNode.src = result.url;
+        } else {
+          initialSrcs.current.set(targetTabId, result.url);
+          updateTab(targetTabId, {
+            type: "browser",
+            address: result.url,
+            title: getTabTitleFromUrl(result.url)
+          });
+        }
       }
 
       setActiveTabId(targetTabId);
@@ -385,8 +440,6 @@ function App() {
     node.addEventListener("did-navigate", sync);
     node.addEventListener("did-navigate-in-page", sync);
     node.addEventListener("page-title-updated", sync);
-    node.addEventListener("did-start-loading", sync);
-    node.addEventListener("did-stop-loading", sync);
 
     queueMicrotask(sync);
   }, [syncTabWithWebview]);
@@ -415,6 +468,7 @@ function App() {
         onSelectTab={(tabId) => {
           setActiveTabId(tabId);
           setPanelView("tab");
+          setShowFindBar(false);
         }}
         onCloseTab={closeTab}
         onNewTab={createNewTab}
@@ -429,9 +483,12 @@ function App() {
         onNavigate={handleNavigate}
         onSettings={handleOpenSettings}
         onHome={handleHome}
-        statusText={panelView === "settings" ? "Settings" : panelView === "blocked" ? "Blocked" : "Focus"}
+        statusText={
+          panelView === "settings" ? "Settings" : panelView === "blocked" ? "Blocked" : ""
+        }
         isBookmarked={state.settings.bookmarks.includes(toolbarAddress)}
         onToggleBookmark={() => handleToggleBookmark(toolbarAddress)}
+        approvedDomains={state.whitelist.merged}
       />
       {showBookmarksBar && state.settings.bookmarks.length > 0 && (
         <BookmarksBar
@@ -440,23 +497,32 @@ function App() {
             setPanelView("tab");
             handleNavigate(domain, activeTabId);
           }}
+          onReorder={(reordered) => {
+            window.pagecow.updateSettings({ bookmarks: reordered });
+          }}
+          onRemove={(url) => {
+            const next = state.settings.bookmarks.filter((b) => b !== url);
+            window.pagecow.updateSettings({ bookmarks: next });
+          }}
         />
       )}
       <main className="content">
+        {showFindBar && panelView === "tab" && activeTab?.type === "browser" && (
+          <FindBar
+            webviewRef={activeWebviewRef}
+            onClose={() => setShowFindBar(false)}
+          />
+        )}
         <div className="tab-stage">
           {tabs.map((tab) =>
             tab.type === "browser" ? (
-              <div
+              <TabView
                 key={tab.id}
-                className={`webview-wrap${tab.id === activeTabId && panelView === "tab" ? " active" : ""}`}
-              >
-                <webview
-                  ref={(node) => handleWebviewRef(tab.id, node)}
-                  src={tab.address}
-                  className="content-webview"
-                  allowpopups="true"
-                />
-              </div>
+                tabId={tab.id}
+                initialSrc={initialSrcs.current.get(tab.id) || tab.address}
+                isActive={tab.id === activeTabId && panelView === "tab"}
+                onWebviewRef={handleWebviewRef}
+              />
             ) : null
           )}
 
@@ -472,7 +538,7 @@ function App() {
 
         {panelView === "blocked" && (
           <div className="content-overlay">
-            <BlockedPage blockedUrl={blockedUrl} onOpenSettings={handleOpenSettings} />
+            <BlockedPage blockedUrl={blockedUrl} />
           </div>
         )}
 

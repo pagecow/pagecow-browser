@@ -10,7 +10,9 @@ const {
   isUrlAllowed,
   getWhitelistModel,
   toCanonicalUrl,
-  getHostname
+  getHostname,
+  looksLikeSearchTerm,
+  findBestWhitelistMatch
 } = require("./src/main/whitelistEngine");
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
 
@@ -153,15 +155,26 @@ ipcMain.handle("pagecow:navigate", (_event, rawInput) => {
   if (!normalized) {
     return { ok: false, reason: "invalid", message: "Please enter a valid URL or domain." };
   }
-  if (!isUrlAllowed(normalized, preApprovedDomains, settings.personalWhitelist)) {
-    return {
-      ok: false,
-      reason: "blocked",
-      url: normalized,
-      host: getHostname(normalized)
-    };
+  if (isUrlAllowed(normalized, preApprovedDomains, settings.personalWhitelist)) {
+    return { ok: true, url: normalized };
   }
-  return { ok: true, url: normalized };
+
+  if (looksLikeSearchTerm(rawInput)) {
+    const match = findBestWhitelistMatch(rawInput, preApprovedDomains, settings.personalWhitelist);
+    if (match) {
+      const matchUrl = toCanonicalUrl(match);
+      if (matchUrl) {
+        return { ok: true, url: matchUrl };
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    reason: "blocked",
+    url: normalized,
+    host: getHostname(normalized)
+  };
 });
 
 ipcMain.handle("pagecow:go-back", () => true);
@@ -216,7 +229,8 @@ ipcMain.handle("pagecow:update-settings", (_event, patch = {}) => {
     showBookmarksBar:
       typeof patch.showBookmarksBar === "boolean"
         ? patch.showBookmarksBar
-        : settings.showBookmarksBar
+        : settings.showBookmarksBar,
+    bookmarks: Array.isArray(patch.bookmarks) ? patch.bookmarks : settings.bookmarks
   });
   notifyStateChanged();
   return { ok: true, settings: getPublicSettings() };
