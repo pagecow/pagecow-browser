@@ -19,6 +19,7 @@ const EXACT_HOST_LABELS = {
   "plato.stanford.edu": "Stanford Encyclopedia of Philosophy",
   "iep.utm.edu": "Internet Encyclopedia of Philosophy",
   "gmail.com": "Gmail",
+  "accounts.youtube.com": "YouTube Account",
   "kdp.amazon.com": "Amazon KDP",
   "quickbooks.intuit.com": "QuickBooks",
   "kindledirectpublishing.com": "Kindle Direct Publishing",

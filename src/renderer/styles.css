@@ -139,6 +139,36 @@ a:hover {
   display: none;
 }
 
+.browser-tab.dragging {
+  opacity: 0.4;
+}
+
+.browser-tab.tab-drop-before,
+.browser-tab.tab-drop-after {
+  position: relative;
+}
+
+.browser-tab.tab-drop-before::before,
+.browser-tab.tab-drop-after::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent, #4285f4);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.browser-tab.tab-drop-before::before {
+  left: -1px;
+}
+
+.browser-tab.tab-drop-after::before {
+  right: -1px;
+  left: auto;
+}
+
 .browser-tab-label {
   flex: 1;
   min-width: 0;
@@ -455,10 +485,10 @@ a:hover {
   right: -3px;
 }
 
-.bookmark-context-menu {
+.context-menu {
   position: fixed;
   z-index: 9999;
-  min-width: 160px;
+  min-width: 180px;
   background: #292b2e;
   border: 1px solid #3c3f41;
   border-radius: 6px;
@@ -466,7 +496,7 @@ a:hover {
   padding: 4px 0;
 }
 
-.bookmark-context-item {
+.context-menu-item {
   display: flex;
   align-items: center;
   width: 100%;
@@ -479,8 +509,16 @@ a:hover {
   text-align: left;
 }
 
-.bookmark-context-item:hover {
+.context-menu-item:hover {
   background: #3c3f41;
+}
+
+.context-menu-item-danger {
+  color: #f87171;
+}
+
+.context-menu-item-danger:hover {
+  background: rgba(248, 113, 113, 0.12);
 }
 
 .bookmark-icon {

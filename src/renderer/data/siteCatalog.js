@@ -64,6 +64,7 @@ const CATEGORY_BY_DOMAIN = new Map([
   ["editminion.com", "Grammar & Editing"],
   ["gmail.com", "Email & Communication"],
   ["accounts.google.com", "Email & Communication"],
+  ["accounts.youtube.com", "Email & Communication"],
   ["mail.google.com", "Email & Communication"],
   ["mail.yahoo.com", "Email & Communication"],
   ["protonmail.com", "Email & Communication"],

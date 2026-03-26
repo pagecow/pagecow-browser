@@ -102,6 +102,9 @@ function App() {
     activeWebviewRef.current = webviewRefs.current.get(activeTabId) || null;
   });
 
+  const navigatingNewTabRef = useRef(false);
+  const handleNavigateRef = useRef(null);
+
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
@@ -323,6 +326,43 @@ function App() {
     }
   }
 
+  handleNavigateRef.current = handleNavigate;
+
+  const handleNavigateInNewTab = useCallback(async (rawValue) => {
+    if (navigatingNewTabRef.current) return;
+    navigatingNewTabRef.current = true;
+
+    try {
+      if (!window.pagecow) return;
+      const value = rawValue?.trim();
+      if (!value) return;
+
+      const result = await window.pagecow.navigate(value);
+      if (!result.ok) {
+        if (result.reason === "blocked") {
+          setBlockedUrl(result.url || value);
+          setPanelView("blocked");
+        }
+        return;
+      }
+
+      if (result.url === "about:newtab") {
+        openTab({}, { afterTabId: activeTabIdRef.current });
+      } else {
+        openTab(
+          {
+            type: "browser",
+            address: result.url,
+            title: getTabTitleFromUrl(result.url)
+          },
+          { afterTabId: activeTabIdRef.current }
+        );
+      }
+    } finally {
+      navigatingNewTabRef.current = false;
+    }
+  }, [openTab]);
+
   function handleRefresh() {
     const activeNode = webviewRefs.current.get(activeTabId);
     if (panelView === "tab" && activeTab?.type === "browser" && activeNode) {
@@ -472,6 +512,7 @@ function App() {
         }}
         onCloseTab={closeTab}
         onNewTab={createNewTab}
+        onReorder={(reordered) => setTabs(reordered)}
       />
       <Toolbar
         value={toolbarAddress}
@@ -495,8 +536,9 @@ function App() {
           domains={state.settings.bookmarks}
           onNavigate={(domain) => {
             setPanelView("tab");
-            handleNavigate(domain, activeTabId);
+            handleNavigateRef.current(domain, activeTabId);
           }}
+          onNavigateNewTab={handleNavigateInNewTab}
           onReorder={(reordered) => {
             window.pagecow.updateSettings({ bookmarks: reordered });
           }}
@@ -530,7 +572,8 @@ function App() {
             <div className={`tab-page${panelView === "tab" ? " active" : ""}`}>
               <NewTabPage
                 approvedDomains={state.whitelist.preApproved}
-                onNavigate={(value) => handleNavigate(value, activeTabId)}
+                onNavigate={(value) => handleNavigateRef.current(value, activeTabId)}
+                onNavigateNewTab={handleNavigateInNewTab}
               />
             </div>
           )}

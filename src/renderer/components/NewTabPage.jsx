@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { displayNameForDomain } from "../data/domainDisplayName";
 import { buildCatalogEntries, availableCategoryFilters } from "../data/siteCatalog";
 
@@ -11,9 +11,24 @@ function getDomainInitial(domain) {
   return clean.charAt(0).toUpperCase();
 }
 
-function NewTabPage({ approvedDomains = [], onNavigate }) {
+function NewTabPage({ approvedDomains = [], onNavigate, onNavigateNewTab }) {
   const [activeFilter, setActiveFilter] = useState("Popular");
   const [searchQuery, setSearchQuery] = useState("");
+  const [contextMenu, setContextMenu] = useState(null);
+  const menuRef = useRef(null);
+
+  const closeMenu = useCallback(() => setContextMenu(null), []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        closeMenu();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [contextMenu, closeMenu]);
 
   const catalogEntries = useMemo(() => {
     return buildCatalogEntries(approvedDomains);
@@ -45,12 +60,22 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
     return catalogEntries.filter((entry) => entry.category === activeFilter);
   }, [activeFilter, catalogEntries, searchResults]);
 
-  function handleSiteClick(domain) {
+  function handleSiteClick(event, domain) {
+    if ((event.metaKey || event.ctrlKey) && onNavigateNewTab) {
+      event.preventDefault();
+      onNavigateNewTab(domain);
+      return;
+    }
     if (onNavigate) {
       onNavigate(domain);
     } else if (window.pagecow?.navigate) {
       window.pagecow.navigate(domain);
     }
+  }
+
+  function handleSiteContextMenu(event, domain) {
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY, domain });
   }
 
   function handleSearchSubmit(event) {
@@ -119,7 +144,8 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
               type="button"
               className="shortcut-tile"
               role="listitem"
-              onClick={() => handleSiteClick(entry.domain)}
+              onClick={(e) => handleSiteClick(e, entry.domain)}
+              onContextMenu={(e) => handleSiteContextMenu(e, entry.domain)}
               title={entry.domain}
             >
               <div className="shortcut-icon">
@@ -141,6 +167,26 @@ function NewTabPage({ approvedDomains = [], onNavigate }) {
       <div className="info-bar">
         Would you like another site to be added to the approved list of sites? Send us an email at submissions@pagecow.com
       </div>
+
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+          <button
+            type="button"
+            className="context-menu-item"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              if (onNavigateNewTab) onNavigateNewTab(contextMenu.domain);
+              closeMenu();
+            }}
+          >
+            Open in new tab
+          </button>
+        </div>
+      )}
     </div>
   );
 }

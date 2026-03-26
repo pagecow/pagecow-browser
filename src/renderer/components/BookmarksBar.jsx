@@ -10,7 +10,7 @@ function getFaviconUrl(url) {
   }
 }
 
-function BookmarksBar({ domains = [], onNavigate, onReorder, onRemove }) {
+function BookmarksBar({ domains = [], onNavigate, onNavigateNewTab, onReorder, onRemove }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -82,11 +82,18 @@ function BookmarksBar({ domains = [], onNavigate, onReorder, onRemove }) {
     dragNode.current = null;
   }
 
-  function handleClick(url) {
-    if (!didDrag.current) {
-      onNavigate(url);
+  function handleClick(e, url) {
+    if (didDrag.current) {
+      didDrag.current = false;
+      return;
     }
     didDrag.current = false;
+    if ((e.metaKey || e.ctrlKey) && onNavigateNewTab) {
+      e.preventDefault();
+      onNavigateNewTab(url);
+      return;
+    }
+    onNavigate(url);
   }
 
   if (domains.length === 0) {
@@ -111,7 +118,7 @@ function BookmarksBar({ domains = [], onNavigate, onReorder, onRemove }) {
             onDragStart={(e) => handleDragStart(e, index)}
             onDragOver={(e) => handleDragOver(e, index)}
             onDragEnd={handleDragEnd}
-            onClick={() => handleClick(url)}
+            onClick={(e) => handleClick(e, url)}
             onContextMenu={(e) => handleContextMenu(e, url)}
             title={url}
           >
@@ -124,12 +131,23 @@ function BookmarksBar({ domains = [], onNavigate, onReorder, onRemove }) {
       {contextMenu && (
         <div
           ref={menuRef}
-          className="bookmark-context-menu"
+          className="context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
             type="button"
-            className="bookmark-context-item"
+            className="context-menu-item"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              if (onNavigateNewTab) onNavigateNewTab(contextMenu.url);
+              closeMenu();
+            }}
+          >
+            Open in new tab
+          </button>
+          <button
+            type="button"
+            className="context-menu-item context-menu-item-danger"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
               onRemove(contextMenu.url);
