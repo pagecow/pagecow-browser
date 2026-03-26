@@ -3,7 +3,7 @@ import { formatClock, getDayOfYear } from "../utils/date";
 import { WRITING_QUOTES } from "../data/quotes";
 import { buildCatalogEntries, availableCategoryFilters } from "../data/siteCatalog";
 
-function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [] }) {
+function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [], onNavigate }) {
   const [time, setTime] = useState(formatClock(new Date()));
   const [activeFilter, setActiveFilter] = useState("Popular");
 
@@ -40,31 +40,49 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [] }) {
     return catalogEntries.filter((entry) => entry.category === activeFilter);
   }, [activeFilter, catalogEntries]);
 
+  function handleSiteClick(domain) {
+    if (onNavigate) {
+      onNavigate(domain);
+    } else if (window.pagecow?.navigate) {
+      window.pagecow.navigate(domain);
+    }
+  }
+
   return (
     <div className="center-screen">
-      <div className="brand-card">
-        <div className="pagecow-logo" aria-hidden>
-          🐄
+      <div className="brand-card home">
+        <div className="home-hero">
+          <div className="pagecow-logo" aria-hidden>
+            🐄
+          </div>
+          <h1 className="app-title">PageCow</h1>
+          <p className="tagline">The browser that keeps you writing</p>
+          <div className="clock">{time}</div>
+          <div className="date-row">
+            {new Date().toLocaleDateString(undefined, {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric"
+            })}
+          </div>
         </div>
-        <h1>PageCow</h1>
-        <p className="tagline">The browser that keeps you writing</p>
-        <div className="clock">{time}</div>
-        {showQuote ? <blockquote className="quote">"{quote}"</blockquote> : null}
+
+        {showQuote && <blockquote className="quote">&ldquo;{quote}&rdquo;</blockquote>}
 
         <section className="home-explainer">
-          <h2>What is PageCow?</h2>
           <p>
             PageCow is a distraction-free work browser with a curated approved-site list. Every
             website request is checked against that list so social media, entertainment, and other
             off-task destinations stay out of your workflow.
           </p>
-          <p>
-            Missing a work site? Email us at{" "}
+          <p className="submission-callout">
+            Missing a work site? Email{" "}
             <a
               href="mailto:submission@pagecow.com"
               onClick={(event) => {
                 event.preventDefault();
-                window.pagecow.openExternal("mailto:submission@pagecow.com");
+                window.pagecow?.openExternal("mailto:submission@pagecow.com");
               }}
             >
               submission@pagecow.com
@@ -73,17 +91,17 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [] }) {
           </p>
         </section>
 
-        <section className="site-catalog">
-          <h2>Approved Sites Catalog</h2>
-          <p className="catalog-helper">
-            Browse approved websites by category or open a popular one in one click.
-          </p>
+        <section className="catalog">
+          <div className="catalog-head">
+            <h3>Approved Sites</h3>
+            <span className="catalog-count">{catalogEntries.length} sites</span>
+          </div>
           <div className="catalog-filters">
             {filterOrder.map((filterKey) => (
               <button
                 key={filterKey}
                 type="button"
-                className={`catalog-filter ${activeFilter === filterKey ? "active" : ""}`}
+                className={`filter-pill${activeFilter === filterKey ? " active" : ""}`}
                 onClick={() => setActiveFilter(filterKey)}
               >
                 {filterKey}
@@ -91,15 +109,17 @@ function NewTabPage({ showQuote, quote: fixedQuote, approvedDomains = [] }) {
             ))}
           </div>
 
-          <div className="catalog-list" role="list">
+          <div className="catalog-grid" role="list">
             {visibleEntries.map((entry) => (
               <button
                 key={entry.domain}
                 type="button"
-                className="catalog-domain"
-                onClick={() => window.pagecow.navigate(entry.domain)}
+                className="catalog-site"
+                role="listitem"
+                onClick={() => handleSiteClick(entry.domain)}
               >
-                {entry.domain}
+                <div className="catalog-site-domain">{entry.domain}</div>
+                <div className="catalog-site-category">{entry.category}</div>
               </button>
             ))}
           </div>

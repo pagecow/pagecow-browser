@@ -25,7 +25,6 @@ contextBridge.exposeInMainWorld("pagecow", {
   updateSettings: (patch) => ipcRenderer.invoke("pagecow:update-settings", patch),
   openExternal: (url) => ipcRenderer.invoke("pagecow:open-external", url),
 
-  onNavigationState: (callback) => subscribe("pagecow:navigation-state", callback),
   onBlockedNavigation: (callback) => subscribe("pagecow:blocked-navigation", callback),
   onStateChanged: (callback) => subscribe("pagecow:state-changed", callback)
 });

@@ -8,7 +8,8 @@ function Toolbar({
   onForward,
   onRefresh,
   onNavigate,
-  onSettings
+  onSettings,
+  statusText
 }) {
   const [inputValue, setInputValue] = useState(value || "");
 
@@ -21,11 +22,13 @@ function Toolbar({
     onNavigate(inputValue);
   }
 
+  const isBlocked = statusText && statusText.toLowerCase().includes("blocked");
+
   return (
     <header className="toolbar">
       <button
         type="button"
-        className="icon-button"
+        className="toolbar-button"
         onClick={onBack}
         disabled={!canGoBack}
         aria-label="Back"
@@ -35,7 +38,7 @@ function Toolbar({
       </button>
       <button
         type="button"
-        className="icon-button"
+        className="toolbar-button"
         onClick={onForward}
         disabled={!canGoForward}
         aria-label="Forward"
@@ -45,7 +48,7 @@ function Toolbar({
       </button>
       <button
         type="button"
-        className="icon-button"
+        className="toolbar-button"
         onClick={onRefresh}
         aria-label="Refresh"
         title="Refresh"
@@ -53,7 +56,7 @@ function Toolbar({
         ↻
       </button>
 
-      <form className="url-form" onSubmit={handleSubmit}>
+      <form className="toolbar-address" onSubmit={handleSubmit}>
         <input
           className="url-input"
           type="text"
@@ -62,13 +65,16 @@ function Toolbar({
           placeholder="Enter a work site URL..."
           aria-label="Address bar"
         />
+        <button type="submit" className="go-button">Go</button>
       </form>
 
-      <div className="toolbar-status">Focus mode</div>
+      <span className={`status-pill${isBlocked ? " blocked" : ""}`}>
+        {statusText || "Focus mode"}
+      </span>
 
       <button
         type="button"
-        className="icon-button"
+        className="toolbar-button"
         onClick={onSettings}
         aria-label="Settings"
         title="Settings"

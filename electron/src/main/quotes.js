@@ -7,7 +7,7 @@ const QUOTES = [
   "Silence the noise and trust the sentence."
 ];
 
-function getDailyQuote() {
+function getQuoteOfTheDay() {
   const now = new Date();
   const daySeed = Math.floor(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) /
@@ -17,5 +17,5 @@ function getDailyQuote() {
 }
 
 module.exports = {
-  getDailyQuote
+  getQuoteOfTheDay
 };
