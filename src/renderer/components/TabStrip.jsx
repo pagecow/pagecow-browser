@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 function getTabLabel(tab) {
   if (!tab) return "New Tab";
+  if (tab.isShowingHome) return "New Tab";
   if (tab.title && tab.title.trim()) return tab.title.trim();
   if (tab.type === "browser" && tab.address) {
     try {

@@ -15,6 +15,7 @@ const {
   findBestWhitelistMatch
 } = require("./src/main/whitelistEngine");
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
+const { initializeAdBlocker } = require("./src/main/adBlocker");
 
 let settings = {
   personalWhitelist: [],
@@ -128,7 +129,8 @@ function createAndInitializeWindow() {
   installGuestNavigationGuards(mainWindow);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initializeAdBlocker();
   createAndInitializeWindow();
 
   app.on("activate", () => {

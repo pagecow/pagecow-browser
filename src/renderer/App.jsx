@@ -17,6 +17,13 @@ function createTab(overrides = {}) {
     address: "",
     canGoBack: false,
     canGoForward: false,
+    canReturnHome: false,
+    isShowingHome: false,
+    browserViewKey: 0,
+    newTabState: {
+      activeFilter: "Popular",
+      searchQuery: ""
+    },
     ...overrides
   };
 }
@@ -118,6 +125,38 @@ function App() {
       })
     );
   }, []);
+
+  const replaceBrowserView = useCallback((tabId, url) => {
+    initialSrcs.current.set(tabId, url);
+    updateTab(tabId, (tab) => ({
+      type: "browser",
+      address: url,
+      title: getTabTitleFromUrl(url),
+      canGoBack: false,
+      canGoForward: false,
+      canReturnHome: true,
+      isShowingHome: false,
+      browserViewKey: (tab.browserViewKey || 0) + 1
+    }));
+  }, [updateTab]);
+
+  const restoreNewTab = useCallback((tabId) => {
+    initialSrcs.current.delete(tabId);
+    updateTab(tabId, (tab) => ({
+      type: "new-tab",
+      title: "New Tab",
+      address: "",
+      canGoBack: false,
+      canGoForward: false,
+      canReturnHome: false,
+      newTabState: tab.newTabState || {
+        activeFilter: "Popular",
+        searchQuery: ""
+      }
+    }));
+    setPanelView("tab");
+    setBlockedUrl("");
+  }, [updateTab]);
 
   const openTab = useCallback((overrides = {}, options = {}) => {
     const nextTab = createTab(overrides);
@@ -300,29 +339,38 @@ function App() {
 
     if (result.ok) {
       if (result.url === "about:newtab") {
-        updateTab(targetTabId, {
-          type: "new-tab",
-          title: "New Tab",
-          address: "",
-          canGoBack: false,
-          canGoForward: false
-        });
+        restoreNewTab(targetTabId);
       } else {
+        const targetTab = tabs.find((tab) => tab.id === targetTabId);
         const existingNode = webviewRefs.current.get(targetTabId);
-        if (existingNode) {
+        if (targetTab?.type === "browser" && targetTab.isShowingHome) {
+          replaceBrowserView(targetTabId, result.url);
+        } else if (existingNode) {
           existingNode.src = result.url;
-        } else {
-          initialSrcs.current.set(targetTabId, result.url);
-          updateTab(targetTabId, {
+          updateTab(targetTabId, (tab) => ({
             type: "browser",
             address: result.url,
-            title: getTabTitleFromUrl(result.url)
-          });
+            title: getTabTitleFromUrl(result.url),
+            canReturnHome: tab.type === "new-tab" ? true : tab.canReturnHome,
+            isShowingHome: false
+          }));
+        } else {
+          initialSrcs.current.set(targetTabId, result.url);
+          updateTab(targetTabId, (tab) => ({
+            type: "browser",
+            address: result.url,
+            title: getTabTitleFromUrl(result.url),
+            canGoBack: false,
+            canGoForward: false,
+            canReturnHome: tab.type === "new-tab" ? true : tab.canReturnHome,
+            isShowingHome: false
+          }));
         }
       }
 
       setActiveTabId(targetTabId);
       setPanelView("tab");
+      setBlockedUrl("");
     }
   }
 
@@ -371,15 +419,44 @@ function App() {
   }
 
   function handleGoBack() {
+    if (panelView === "blocked") {
+      setPanelView("tab");
+      setBlockedUrl("");
+      return;
+    }
+
+    if (panelView !== "tab") {
+      return;
+    }
+
+    if (activeTab?.type === "browser" && activeTab.isShowingHome) {
+      return;
+    }
+
     const activeNode = webviewRefs.current.get(activeTabId);
-    if (panelView === "tab" && activeTab?.type === "browser" && activeNode?.canGoBack()) {
+    if (activeTab?.type === "browser" && activeNode?.canGoBack()) {
       activeNode.goBack();
+      return;
+    }
+
+    if (activeTab?.type === "browser" && activeTab.canReturnHome) {
+      setShowFindBar(false);
+      updateTab(activeTabId, { isShowingHome: true });
     }
   }
 
   function handleGoForward() {
+    if (panelView !== "tab") {
+      return;
+    }
+
+    if (activeTab?.type === "browser" && activeTab.isShowingHome) {
+      updateTab(activeTabId, { isShowingHome: false });
+      return;
+    }
+
     const activeNode = webviewRefs.current.get(activeTabId);
-    if (panelView === "tab" && activeTab?.type === "browser" && activeNode?.canGoForward()) {
+    if (activeTab?.type === "browser" && activeNode?.canGoForward()) {
       activeNode.goForward();
     }
   }
@@ -389,14 +466,15 @@ function App() {
   }
 
   function handleHome() {
-    updateTab(activeTabIdRef.current, {
-      type: "new-tab",
-      title: "New Tab",
-      address: "",
-      canGoBack: false,
-      canGoForward: false
-    });
-    setPanelView("tab");
+    if (activeTab?.type === "browser") {
+      setPanelView("tab");
+      setBlockedUrl("");
+      setShowFindBar(false);
+      updateTab(activeTabIdRef.current, { isShowingHome: true });
+      return;
+    }
+
+    restoreNewTab(activeTabIdRef.current);
   }
 
   function mapError(reason) {
@@ -487,14 +565,26 @@ function App() {
   const toolbarAddress =
     panelView === "blocked"
       ? blockedUrl
+      : activeTab?.isShowingHome
+        ? ""
       : activeTab?.type === "browser"
         ? activeTab.address
         : "";
 
-  const toolbarCanGoBack = panelView === "tab" && activeTab?.type === "browser" && activeTab.canGoBack;
+  const toolbarCanGoBack =
+    panelView === "blocked"
+      ? true
+      : panelView !== "tab"
+        ? false
+      : activeTab?.type === "browser"
+        && !activeTab.isShowingHome
+        && (activeTab.canGoBack || activeTab.canReturnHome);
   const toolbarCanGoForward =
-    panelView === "tab" && activeTab?.type === "browser" && activeTab.canGoForward;
-  const showBookmarksBar = state.settings.showBookmarksBar && panelView === "tab";
+    panelView === "tab"
+      && activeTab?.type === "browser"
+      && (activeTab.isShowingHome || activeTab.canGoForward);
+  const showBookmarksBar =
+    state.settings.showBookmarksBar && panelView === "tab" && !activeTab?.isShowingHome;
 
   if (loading || !activeTab) {
     return <div className="loading-screen">Loading...</div>;
@@ -549,7 +639,7 @@ function App() {
         />
       )}
       <main className="content">
-        {showFindBar && panelView === "tab" && activeTab?.type === "browser" && (
+        {showFindBar && panelView === "tab" && activeTab?.type === "browser" && !activeTab.isShowingHome && (
           <FindBar
             webviewRef={activeWebviewRef}
             onClose={() => setShowFindBar(false)}
@@ -559,23 +649,46 @@ function App() {
           {tabs.map((tab) =>
             tab.type === "browser" ? (
               <TabView
-                key={tab.id}
+                key={`${tab.id}:${tab.browserViewKey || 0}`}
                 tabId={tab.id}
                 initialSrc={initialSrcs.current.get(tab.id) || tab.address}
-                isActive={tab.id === activeTabId && panelView === "tab"}
+                isActive={tab.id === activeTabId && panelView === "tab" && !activeTab?.isShowingHome}
                 onWebviewRef={handleWebviewRef}
               />
             ) : null
           )}
 
-          {activeTab.type === "new-tab" && (
-            <div className={`tab-page${panelView === "tab" ? " active" : ""}`}>
-              <NewTabPage
-                approvedDomains={state.whitelist.preApproved}
-                onNavigate={(value) => handleNavigateRef.current(value, activeTabId)}
-                onNavigateNewTab={handleNavigateInNewTab}
-              />
-            </div>
+          {tabs.map((tab) =>
+            tab.type === "new-tab" || (tab.id === activeTabId && tab.isShowingHome && panelView === "tab") ? (
+              <div
+                key={tab.id}
+                className={`tab-page${tab.id === activeTabId && panelView === "tab" ? " active" : ""}`}
+              >
+                <NewTabPage
+                  approvedDomains={state.whitelist.preApproved}
+                  activeFilter={tab.newTabState?.activeFilter}
+                  searchQuery={tab.newTabState?.searchQuery}
+                  onActiveFilterChange={(value) => {
+                    updateTab(tab.id, (currentTab) => ({
+                      newTabState: {
+                        ...currentTab.newTabState,
+                        activeFilter: value
+                      }
+                    }));
+                  }}
+                  onSearchQueryChange={(value) => {
+                    updateTab(tab.id, (currentTab) => ({
+                      newTabState: {
+                        ...currentTab.newTabState,
+                        searchQuery: value
+                      }
+                    }));
+                  }}
+                  onNavigate={(value) => handleNavigateRef.current(value, tab.id)}
+                  onNavigateNewTab={handleNavigateInNewTab}
+                />
+              </div>
+            ) : null
           )}
         </div>
 
