@@ -7,18 +7,20 @@ function SettingsPage({
   version,
   onToggleBookmarksBar,
   onClose,
-  onUpdateSettings
+  onUpdateSettings,
 }) {
   const fullWhitelist = useMemo(() => {
     const list = [
       ...preApprovedDomains.map((domain) => ({ domain, type: "Pre-approved" })),
-      ...personalDomains.map((domain) => ({ domain, type: "Personal" }))
+      ...personalDomains.map((domain) => ({ domain, type: "Personal" })),
     ];
     return list.sort((a, b) => a.domain.localeCompare(b.domain));
   }, [preApprovedDomains, personalDomains]);
 
   const handleRemoveBookmark = (domain) => {
-    const nextBookmarks = (settings.bookmarks || []).filter((b) => b !== domain);
+    const nextBookmarks = (settings.bookmarks || []).filter(
+      (b) => b !== domain,
+    );
     onUpdateSettings({ bookmarks: nextBookmarks });
   };
 
@@ -34,7 +36,8 @@ function SettingsPage({
       <div className="settings-sections">
         <section className="settings-section">
           <p>
-            Would you like another site to be added to the approved list of sites? Send us an email at submissions@pagecow.com
+            Would you like another site to be added to the approved list of
+            sites? Send us an email at submissions@pagecow.com
           </p>
         </section>
 
@@ -47,7 +50,9 @@ function SettingsPage({
                 <input
                   type="checkbox"
                   checked={settings.showBookmarksBar}
-                  onChange={(event) => onToggleBookmarksBar(event.target.checked)}
+                  onChange={(event) =>
+                    onToggleBookmarksBar(event.target.checked)
+                  }
                 />
                 <span className="toggle-slider" />
               </label>
@@ -58,7 +63,8 @@ function SettingsPage({
         <section className="settings-section">
           <h3>Your Bookmarks ({settings.bookmarks?.length || 0})</h3>
           <p className="settings-section-hint">
-            Manage your bookmarked sites. They will appear in the bookmarks bar if it is enabled.
+            Manage your bookmarked sites. They will appear in the bookmarks bar
+            if it is enabled.
           </p>
           <div className="domain-list">
             {(settings.bookmarks || []).length === 0 ? (
@@ -87,7 +93,10 @@ function SettingsPage({
           </p>
           <div className="domain-list">
             {fullWhitelist.map((entry) => (
-              <div className="domain-item" key={`${entry.type}:${entry.domain}`}>
+              <div
+                className="domain-item"
+                key={`${entry.type}:${entry.domain}`}
+              >
                 <span className="domain-name">{entry.domain}</span>
                 <span className="domain-meta">{entry.type}</span>
               </div>
@@ -103,13 +112,13 @@ function SettingsPage({
             <p>
               Need a site approved?{" "}
               <a
-                href="mailto:submission@pagecow.com"
+                href="mailto:support@pagecow.com"
                 onClick={(event) => {
                   event.preventDefault();
-                  window.pagecow?.openExternal("mailto:submission@pagecow.com");
+                  window.pagecow?.openExternal("mailto:support@pagecow.com");
                 }}
               >
-                submission@pagecow.com
+                support@pagecow.com
               </a>
             </p>
             <p>

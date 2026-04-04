@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Toolbar from "./components/Toolbar";
 import TabStrip from "./components/TabStrip";
 import BookmarksBar from "./components/BookmarksBar";
-import NewTabPage from "./components/NewTabPage";
 import BlockedPage from "./components/BlockedPage";
 import SettingsPage from "./components/SettingsPage";
 import FindBar from "./components/FindBar";
@@ -12,18 +11,12 @@ let nextTabId = 1;
 function createTab(overrides = {}) {
   return {
     id: `tab-${nextTabId++}`,
-    type: "new-tab",
-    title: "New Tab",
-    address: "",
+    type: "browser",
+    title: "PageCow",
+    address: "https://pagecow.com",
     canGoBack: false,
     canGoForward: false,
-    canReturnHome: false,
-    isShowingHome: false,
     browserViewKey: 0,
-    newTabState: {
-      activeFilter: "Popular",
-      searchQuery: ""
-    },
     ...overrides
   };
 }
@@ -82,7 +75,14 @@ function App() {
     settings: {
       personalWhitelist: [],
       showBookmarksBar: false,
-      bookmarks: []
+      bookmarks: [
+        "https://mediafire.com",
+        "https://wikipedia.org",
+        "https://dictionary.com",
+        "https://thesaurus.com",
+        "https://gotquestions.org",
+        "https://www.bible.com/bible/114/JHN.1.NKJV"
+      ]
     },
     whitelist: {
       preApproved: [],
@@ -98,6 +98,10 @@ function App() {
   const webContentsToTabId = useRef(new Map());
   const activeTabIdRef = useRef(activeTabId);
   const initialSrcs = useRef(new Map());
+
+  if (!initialSrcs.current.has(initialTabRef.current.id)) {
+    initialSrcs.current.set(initialTabRef.current.id, initialTabRef.current.address);
+  }
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) || tabs[0] || null,
@@ -134,28 +138,8 @@ function App() {
       title: getTabTitleFromUrl(url),
       canGoBack: false,
       canGoForward: false,
-      canReturnHome: true,
-      isShowingHome: false,
       browserViewKey: (tab.browserViewKey || 0) + 1
     }));
-  }, [updateTab]);
-
-  const restoreNewTab = useCallback((tabId) => {
-    initialSrcs.current.delete(tabId);
-    updateTab(tabId, (tab) => ({
-      type: "new-tab",
-      title: "New Tab",
-      address: "",
-      canGoBack: false,
-      canGoForward: false,
-      canReturnHome: false,
-      newTabState: tab.newTabState || {
-        activeFilter: "Popular",
-        searchQuery: ""
-      }
-    }));
-    setPanelView("tab");
-    setBlockedUrl("");
   }, [updateTab]);
 
   const openTab = useCallback((overrides = {}, options = {}) => {
@@ -199,6 +183,7 @@ function App() {
       const remainingTabs = previous.filter((tab) => tab.id !== tabId);
       if (remainingTabs.length === 0) {
         const replacementTab = createTab();
+        initialSrcs.current.set(replacementTab.id, replacementTab.address);
         setActiveTabId(replacementTab.id);
         setPanelView("tab");
         return [replacementTab];
@@ -338,34 +323,28 @@ function App() {
     }
 
     if (result.ok) {
-      if (result.url === "about:newtab") {
-        restoreNewTab(targetTabId);
+      let finalUrl = result.url;
+      if (finalUrl === "about:newtab") {
+        finalUrl = "https://pagecow.com";
+      }
+
+      const existingNode = webviewRefs.current.get(targetTabId);
+      if (existingNode) {
+        existingNode.src = finalUrl;
+        updateTab(targetTabId, (tab) => ({
+          type: "browser",
+          address: finalUrl,
+          title: getTabTitleFromUrl(finalUrl)
+        }));
       } else {
-        const targetTab = tabs.find((tab) => tab.id === targetTabId);
-        const existingNode = webviewRefs.current.get(targetTabId);
-        if (targetTab?.type === "browser" && targetTab.isShowingHome) {
-          replaceBrowserView(targetTabId, result.url);
-        } else if (existingNode) {
-          existingNode.src = result.url;
-          updateTab(targetTabId, (tab) => ({
-            type: "browser",
-            address: result.url,
-            title: getTabTitleFromUrl(result.url),
-            canReturnHome: tab.type === "new-tab" ? true : tab.canReturnHome,
-            isShowingHome: false
-          }));
-        } else {
-          initialSrcs.current.set(targetTabId, result.url);
-          updateTab(targetTabId, (tab) => ({
-            type: "browser",
-            address: result.url,
-            title: getTabTitleFromUrl(result.url),
-            canGoBack: false,
-            canGoForward: false,
-            canReturnHome: tab.type === "new-tab" ? true : tab.canReturnHome,
-            isShowingHome: false
-          }));
-        }
+        initialSrcs.current.set(targetTabId, finalUrl);
+        updateTab(targetTabId, (tab) => ({
+          type: "browser",
+          address: finalUrl,
+          title: getTabTitleFromUrl(finalUrl),
+          canGoBack: false,
+          canGoForward: false
+        }));
       }
 
       setActiveTabId(targetTabId);
@@ -394,18 +373,19 @@ function App() {
         return;
       }
 
-      if (result.url === "about:newtab") {
-        openTab({}, { afterTabId: activeTabIdRef.current });
-      } else {
-        openTab(
-          {
-            type: "browser",
-            address: result.url,
-            title: getTabTitleFromUrl(result.url)
-          },
-          { afterTabId: activeTabIdRef.current }
-        );
+      let finalUrl = result.url;
+      if (finalUrl === "about:newtab") {
+        finalUrl = "https://pagecow.com";
       }
+
+      openTab(
+        {
+          type: "browser",
+          address: finalUrl,
+          title: getTabTitleFromUrl(finalUrl)
+        },
+        { afterTabId: activeTabIdRef.current }
+      );
     } finally {
       navigatingNewTabRef.current = false;
     }
@@ -429,29 +409,14 @@ function App() {
       return;
     }
 
-    if (activeTab?.type === "browser" && activeTab.isShowingHome) {
-      return;
-    }
-
     const activeNode = webviewRefs.current.get(activeTabId);
     if (activeTab?.type === "browser" && activeNode?.canGoBack()) {
       activeNode.goBack();
-      return;
-    }
-
-    if (activeTab?.type === "browser" && activeTab.canReturnHome) {
-      setShowFindBar(false);
-      updateTab(activeTabId, { isShowingHome: true });
     }
   }
 
   function handleGoForward() {
     if (panelView !== "tab") {
-      return;
-    }
-
-    if (activeTab?.type === "browser" && activeTab.isShowingHome) {
-      updateTab(activeTabId, { isShowingHome: false });
       return;
     }
 
@@ -466,15 +431,11 @@ function App() {
   }
 
   function handleHome() {
-    if (activeTab?.type === "browser") {
+    if (panelView === "blocked") {
       setPanelView("tab");
       setBlockedUrl("");
-      setShowFindBar(false);
-      updateTab(activeTabIdRef.current, { isShowingHome: true });
-      return;
     }
-
-    restoreNewTab(activeTabIdRef.current);
+    handleNavigateRef.current("https://pagecow.com", activeTabIdRef.current);
   }
 
   function mapError(reason) {
@@ -507,11 +468,18 @@ function App() {
   
   async function handleToggleBookmark(url) {
     if (!url) return;
-    const { bookmarks } = state.settings;
-    const nextBookmarks = bookmarks.includes(url)
-      ? bookmarks.filter((b) => b !== url)
-      : [...bookmarks, url];
-    await window.pagecow.updateSettings({ bookmarks: nextBookmarks });
+    const { bookmarks, showBookmarksBar } = state.settings;
+    const isAdding = !bookmarks.includes(url);
+    const nextBookmarks = isAdding
+      ? [...bookmarks, url]
+      : bookmarks.filter((b) => b !== url);
+
+    const patch = { bookmarks: nextBookmarks };
+    if (isAdding && !showBookmarksBar) {
+      patch.showBookmarksBar = true;
+    }
+
+    await window.pagecow.updateSettings(patch);
   }
 
   const syncTabWithWebview = useCallback((tabId, node) => {
@@ -565,8 +533,6 @@ function App() {
   const toolbarAddress =
     panelView === "blocked"
       ? blockedUrl
-      : activeTab?.isShowingHome
-        ? ""
       : activeTab?.type === "browser"
         ? activeTab.address
         : "";
@@ -577,14 +543,15 @@ function App() {
       : panelView !== "tab"
         ? false
       : activeTab?.type === "browser"
-        && !activeTab.isShowingHome
-        && (activeTab.canGoBack || activeTab.canReturnHome);
+        && activeTab.canGoBack;
+        
   const toolbarCanGoForward =
     panelView === "tab"
       && activeTab?.type === "browser"
-      && (activeTab.isShowingHome || activeTab.canGoForward);
+      && activeTab.canGoForward;
+      
   const showBookmarksBar =
-    state.settings.showBookmarksBar && panelView === "tab" && !activeTab?.isShowingHome;
+    (state.settings.showBookmarksBar || state.settings.bookmarks.length > 0) && panelView === "tab";
 
   if (loading || !activeTab) {
     return <div className="loading-screen">Loading...</div>;
@@ -639,7 +606,7 @@ function App() {
         />
       )}
       <main className="content">
-        {showFindBar && panelView === "tab" && activeTab?.type === "browser" && !activeTab.isShowingHome && (
+        {showFindBar && panelView === "tab" && activeTab?.type === "browser" && (
           <FindBar
             webviewRef={activeWebviewRef}
             onClose={() => setShowFindBar(false)}
@@ -652,42 +619,9 @@ function App() {
                 key={`${tab.id}:${tab.browserViewKey || 0}`}
                 tabId={tab.id}
                 initialSrc={initialSrcs.current.get(tab.id) || tab.address}
-                isActive={tab.id === activeTabId && panelView === "tab" && !activeTab?.isShowingHome}
+                isActive={tab.id === activeTabId && panelView === "tab"}
                 onWebviewRef={handleWebviewRef}
               />
-            ) : null
-          )}
-
-          {tabs.map((tab) =>
-            tab.type === "new-tab" || (tab.id === activeTabId && tab.isShowingHome && panelView === "tab") ? (
-              <div
-                key={tab.id}
-                className={`tab-page${tab.id === activeTabId && panelView === "tab" ? " active" : ""}`}
-              >
-                <NewTabPage
-                  approvedDomains={state.whitelist.preApproved}
-                  activeFilter={tab.newTabState?.activeFilter}
-                  searchQuery={tab.newTabState?.searchQuery}
-                  onActiveFilterChange={(value) => {
-                    updateTab(tab.id, (currentTab) => ({
-                      newTabState: {
-                        ...currentTab.newTabState,
-                        activeFilter: value
-                      }
-                    }));
-                  }}
-                  onSearchQueryChange={(value) => {
-                    updateTab(tab.id, (currentTab) => ({
-                      newTabState: {
-                        ...currentTab.newTabState,
-                        searchQuery: value
-                      }
-                    }));
-                  }}
-                  onNavigate={(value) => handleNavigateRef.current(value, tab.id)}
-                  onNavigateNewTab={handleNavigateInNewTab}
-                />
-              </div>
             ) : null
           )}
         </div>

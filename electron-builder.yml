@@ -6,8 +6,6 @@ directories:
 files:
   - dist/**
   - electron/**
-  - whitelist.json
-  - config/**
   - blocked.json
   - package.json
 mac:

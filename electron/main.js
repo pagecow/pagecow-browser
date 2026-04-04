@@ -20,7 +20,14 @@ const { initializeAdBlocker } = require("./src/main/adBlocker");
 let settings = {
   personalWhitelist: [],
   showBookmarksBar: false,
-  bookmarks: []
+  bookmarks: [
+    "https://mediafire.com",
+    "https://wikipedia.org",
+    "https://dictionary.com",
+    "https://thesaurus.com",
+    "https://gotquestions.org",
+    "https://www.bible.com/bible/114/JHN.1.NKJV"
+  ]
 };
 let preApprovedDomains = [];
 
@@ -120,9 +127,9 @@ function installGuestNavigationGuards(mainWindow) {
   });
 }
 
-function createAndInitializeWindow() {
+async function createAndInitializeWindow() {
   settings = loadSettings();
-  preApprovedDomains = readWhitelistSeed();
+  preApprovedDomains = await readWhitelistSeed();
   const mainWindow = createMainWindow(resolveRendererUrl());
   setMainWindow(mainWindow);
   installNavigationGuards(mainWindow);
@@ -131,11 +138,11 @@ function createAndInitializeWindow() {
 
 app.whenReady().then(async () => {
   await initializeAdBlocker();
-  createAndInitializeWindow();
+  await createAndInitializeWindow();
 
-  app.on("activate", () => {
+  app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createAndInitializeWindow();
+      await createAndInitializeWindow();
     }
   });
 });

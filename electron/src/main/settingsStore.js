@@ -5,7 +5,14 @@ const { app } = require("electron");
 const DEFAULT_SETTINGS = {
   personalWhitelist: [],
   showBookmarksBar: false,
-  bookmarks: []
+  bookmarks: [
+    "https://mediafire.com",
+    "https://wikipedia.org",
+    "https://dictionary.com",
+    "https://thesaurus.com",
+    "https://gotquestions.org",
+    "https://www.bible.com/bible/114/JHN.1.NKJV"
+  ]
 };
 
 function getSettingsPath() {
@@ -47,21 +54,26 @@ function readJson(filePath) {
   }
 }
 
-function readWhitelistSeed() {
-  const candidatePaths = [
-    path.join(process.resourcesPath, "config", "whitelist.json"),
-    path.join(app.getAppPath(), "whitelist.json"),
-    path.join(__dirname, "../../../whitelist.json")
-  ];
-
-  for (const whitelistPath of candidatePaths) {
-    const parsed = readJson(whitelistPath);
-    if (!parsed || !Array.isArray(parsed.preApprovedDomains)) {
-      continue;
+async function readWhitelistSeed() {
+  try {
+    const response = await fetch("https://pagecow.com/whitelist.json");
+    if (!response.ok) {
+      console.error("Failed to fetch whitelist.json:", response.status, response.statusText);
+      return [];
     }
-    return dedupeDomains(parsed.preApprovedDomains);
+    const parsed = await response.json();
+    
+    const sites = Array.isArray(parsed.sites) ? parsed.sites.map(s => s.domain) : [];
+    const hidden = Array.isArray(parsed.hiddenDomains) ? parsed.hiddenDomains : [];
+    const popular = Array.isArray(parsed.popularDomains) ? parsed.popularDomains : [];
+    const legacy = Array.isArray(parsed.preApprovedDomains) ? parsed.preApprovedDomains : [];
+
+    const allDomains = [...sites, ...hidden, ...popular, ...legacy];
+    return dedupeDomains(allDomains);
+  } catch (error) {
+    console.error("Error fetching whitelist.json:", error);
+    return [];
   }
-  return [];
 }
 
 function loadSettings() {
