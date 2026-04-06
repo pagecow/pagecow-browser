@@ -27,5 +27,12 @@ contextBridge.exposeInMainWorld("pagecow", {
 
   onBlockedNavigation: (callback) => subscribe("pagecow:blocked-navigation", callback),
   onStateChanged: (callback) => subscribe("pagecow:state-changed", callback),
-  onOpenUrlInNewTab: (callback) => subscribe("pagecow:open-url-in-new-tab", callback)
+  onOpenUrlInNewTab: (callback) => subscribe("pagecow:open-url-in-new-tab", callback),
+  onKeyboardShortcut: (callback) => subscribe("pagecow:keyboard-shortcut", callback),
+
+  onInspectElement: (callback) => subscribe("pagecow:inspect-element", callback),
+  onDevToolsClosed: (callback) => subscribe("pagecow:devtools-closed", callback),
+  onToggleDeviceToolbar: (callback) => subscribe("pagecow:toggle-device-toolbar", callback),
+  attachDevTools: (payload) => ipcRenderer.invoke("pagecow:attach-devtools", payload),
+  closeDevTools: (payload) => ipcRenderer.invoke("pagecow:close-devtools", payload)
 });

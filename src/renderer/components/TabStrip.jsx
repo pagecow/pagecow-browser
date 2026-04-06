@@ -1,5 +1,44 @@
 import { useRef, useState } from "react";
 
+function getFaviconFallbackUrl(address) {
+  if (!address) return "https://www.google.com/s2/favicons?domain=.&sz=32";
+  try {
+    const domain = new URL(address.startsWith("http") ? address : `https://${address}`).hostname;
+    return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+  } catch {
+    return `https://www.google.com/s2/favicons?domain=${address}&sz=32`;
+  }
+}
+
+function isSafeFaviconSrc(url) {
+  if (!url || typeof url !== "string") return false;
+  const u = url.trim().toLowerCase();
+  return u.startsWith("http:") || u.startsWith("https:") || u.startsWith("data:");
+}
+
+function TabFavicon({ tab }) {
+  const fallback = getFaviconFallbackUrl(tab.address);
+  const primary =
+    tab.faviconUrl && isSafeFaviconSrc(tab.faviconUrl) ? tab.faviconUrl.trim() : fallback;
+
+  return (
+    <img
+      className="browser-tab-favicon"
+      src={primary}
+      alt=""
+      draggable={false}
+      onError={(e) => {
+        const el = e.currentTarget;
+        if (el.src !== fallback) {
+          el.src = fallback;
+        } else {
+          el.style.visibility = "hidden";
+        }
+      }}
+    />
+  );
+}
+
 function getTabLabel(tab) {
   if (!tab) return "New Tab";
   if (tab.isShowingHome) return "New Tab";
@@ -106,6 +145,7 @@ function TabStrip({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTab, onReor
               }}
               title={label}
             >
+              {tab.type === "browser" && <TabFavicon tab={tab} />}
               <span className="browser-tab-label">{label}</span>
               <button
                 type="button"

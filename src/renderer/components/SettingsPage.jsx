@@ -37,7 +37,7 @@ function SettingsPage({
         <section className="settings-section">
           <p>
             Would you like another site to be added to the approved list of
-            sites? Send us an email at submissions@pagecow.com
+            sites? Send us an email at support@pagecow.com
           </p>
         </section>
 

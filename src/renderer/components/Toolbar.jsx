@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const BackIcon = () => (
   <svg viewBox="0 0 24 24">
@@ -46,6 +46,7 @@ function getFaviconUrl(domain) {
 
 function Toolbar({
   value,
+  focusOmniboxKey = 0,
   canGoBack,
   canGoForward,
   onBack,
@@ -63,6 +64,25 @@ function Toolbar({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+  const pendingSelectAll = useRef(false);
+
+  useEffect(() => {
+    if (focusOmniboxKey <= 0) return;
+    pendingSelectAll.current = true;
+    setShowSuggestions(false);
+    setSelectedIndex(-1);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 60);
+  }, [focusOmniboxKey]);
+
+  useLayoutEffect(() => {
+    if (!pendingSelectAll.current) return;
+    const input = inputRef.current;
+    if (!input || document.activeElement !== input) return;
+    input.select();
+  });
 
   useEffect(() => {
     setInputValue(value || "");
@@ -188,14 +208,26 @@ function Toolbar({
       <form className="toolbar-address" onSubmit={handleSubmit}>
         <div className="omnibox-wrap" ref={wrapRef}>
           <input
+            ref={inputRef}
             className="omnibox"
             type="text"
             value={inputValue}
             onChange={(event) => {
+              pendingSelectAll.current = false;
               setInputValue(event.target.value);
               setShowSuggestions(true);
             }}
-            onFocus={() => setShowSuggestions(true)}
+            onFocus={() => {
+              setShowSuggestions(true);
+            }}
+            onBlur={() => {
+              pendingSelectAll.current = false;
+              requestAnimationFrame(() => {
+                if (wrapRef.current?.contains(document.activeElement)) return;
+                setShowSuggestions(false);
+                setInputValue(value || "");
+              });
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Search or enter a work site URL"
             aria-label="Address bar"

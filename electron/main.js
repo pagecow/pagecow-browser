@@ -1,5 +1,5 @@
 const path = require("path");
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Menu, MenuItem, webContents } = require("electron");
 const {
   loadSettings,
   saveSettings,
@@ -97,6 +97,7 @@ function installNavigationGuards(mainWindow) {
 function installGuestNavigationGuards(mainWindow) {
   mainWindow.webContents.on("did-attach-webview", (_event, guestContents) => {
     guestContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith("devtools://")) return { action: "allow" };
       if (!allowOrBlockNavigation(url)) {
         sendToRenderer("pagecow:blocked-navigation", {
           url,
@@ -124,6 +125,24 @@ function installGuestNavigationGuards(mainWindow) {
 
     guestContents.on("will-navigate", preventBlockedNavigation);
     guestContents.on("will-redirect", preventBlockedNavigation);
+
+    guestContents.on("context-menu", (_e, params) => {
+      if (guestContents.getURL().startsWith("devtools://")) return;
+
+      const menu = new Menu();
+      menu.append(new MenuItem({
+        label: "Preview on Other Devices",
+        click: () => sendToRenderer("pagecow:toggle-device-toolbar")
+      }));
+      menu.append(new MenuItem({ type: "separator" }));
+      menu.append(new MenuItem({
+        label: "Inspect Element",
+        click: () => {
+          guestContents.inspectElement(params.x, params.y);
+        }
+      }));
+      menu.popup();
+    });
   });
 }
 
@@ -135,6 +154,24 @@ async function createAndInitializeWindow() {
   installNavigationGuards(mainWindow);
   installGuestNavigationGuards(mainWindow);
 }
+
+app.on("web-contents-created", (event, contents) => {
+  contents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && (input.control || input.meta) && !input.alt) {
+      const key = input.key.toLowerCase();
+      if (key === "f") {
+        sendToRenderer("pagecow:keyboard-shortcut", "find");
+        event.preventDefault();
+      } else if (key === "t") {
+        sendToRenderer("pagecow:keyboard-shortcut", "new-tab");
+        event.preventDefault();
+      } else if (key === "w") {
+        sendToRenderer("pagecow:keyboard-shortcut", "close-tab");
+        event.preventDefault();
+      }
+    }
+  });
+});
 
 app.whenReady().then(async () => {
   await initializeAdBlocker();
@@ -249,4 +286,36 @@ ipcMain.handle("pagecow:open-external", (_event, url) => {
   if (typeof url !== "string" || !url.trim()) return false;
   shell.openExternal(url);
   return true;
+});
+
+ipcMain.handle("pagecow:attach-devtools", (_event, { guestWebContentsId, devtoolsWebContentsId, x, y }) => {
+  try {
+    const guest = webContents.fromId(guestWebContentsId);
+    const devtools = webContents.fromId(devtoolsWebContentsId);
+    if (!guest || !devtools) return { ok: false };
+
+    guest.setDevToolsWebContents(devtools);
+    guest.openDevTools();
+    if (typeof x === "number" && typeof y === "number") {
+      guest.inspectElement(x, y);
+    }
+
+    guest.once("devtools-closed", () => {
+      sendToRenderer("pagecow:devtools-closed", { guestWebContentsId });
+    });
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false };
+  }
+});
+
+ipcMain.handle("pagecow:close-devtools", (_event, { guestWebContentsId }) => {
+  try {
+    const guest = webContents.fromId(guestWebContentsId);
+    if (guest && guest.isDevToolsOpened()) {
+      guest.closeDevTools();
+    }
+  } catch (e) {}
+  return { ok: true };
 });

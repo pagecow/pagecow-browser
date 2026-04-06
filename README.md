@@ -89,6 +89,17 @@ Targets configured with `electron-builder`:
 - Windows: EXE (NSIS)
 - Linux: AppImage
 
+## GitHub releases
+
+Pushing a tag matching `v*` (for example `v1.2.3`) runs [`.github/workflows/release.yml`](.github/workflows/release.yml): installers are built on macOS, Windows, and Linux and attached to a **public** GitHub Release for that tag.
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The workflow sets the npm package version from the tag (without the leading `v`) so installer filenames match the release. Code signing and macOS notarization are not configured; users may see platform warnings for unsigned builds.
+
 ## Whitelist Configuration
 
 Pre-approved domains are defined in:
@@ -104,4 +115,3 @@ Personal whitelist domains and user preferences are stored in a local `settings.
 - `google.com` root is explicitly blocked.
 - Specific Google work subdomains (for example `scholar.google.com`, `docs.google.com`) are allowed if listed.
 - Common distracting domains (social, news, video, shopping, etc.) are blocked by default.
-# pagecow-browser

@@ -96,7 +96,19 @@ function toCanonicalUrl(input) {
   if (trimmed === "about:newtab") return "about:newtab";
 
   let value = trimmed;
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) {
+  const lowerValue = value.toLowerCase();
+  if (
+    lowerValue === "localhost" ||
+    lowerValue.startsWith("localhost:") ||
+    lowerValue.startsWith("127.0.0.1") ||
+    lowerValue.startsWith("0.0.0.0") ||
+    lowerValue.includes(".local:") ||
+    lowerValue.endsWith(".local")
+  ) {
+    if (!lowerValue.startsWith("http")) {
+      value = `http://${value}`;
+    }
+  } else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) {
     value = `https://${value}`;
   }
 
@@ -130,6 +142,7 @@ function getHostname(urlValue) {
 function looksLikeSearchTerm(input) {
   if (!input || typeof input !== "string") return false;
   const trimmed = input.trim();
+  if (trimmed.toLowerCase() === "localhost") return false;
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return false;
   return !trimmed.includes(".");
 }

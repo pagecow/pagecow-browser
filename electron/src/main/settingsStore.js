@@ -34,6 +34,8 @@ function normalizeDomain(input) {
   value = value.replace(/^\.+/, "").replace(/\.+$/, "");
   if (!value || /\s/.test(value) || value.includes("/")) return "";
 
+  if (value === "localhost") return value;
+
   const labels = value.split(".");
   if (labels.length < 2 || labels.some((part) => !part || part.length > 63)) {
     return "";

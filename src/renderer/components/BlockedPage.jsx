@@ -25,11 +25,14 @@ function BlockedPage({ blockedUrl }) {
         </div>
         <h2>This site isn&rsquo;t available</h2>
         <p>
-          PageCow only allows access to approved work sites to help you stay focused.
+          PageCow only allows access to approved work sites to help you stay
+          focused.
         </p>
         <div className="blocked-domain">{extractHost(blockedUrl)}</div>
         <p className="blocked-footer">
-          Need this site for work? Submit a request to add it to the approved list by emailing <a href="mailto:submissions@pagecow.com">submissions@pagecow.com</a>
+          Need this site for work? Submit a request to add it to the approved
+          list by emailing{" "}
+          <a href="mailto:support@pagecow.com">support@pagecow.com</a>
         </p>
       </div>
     </section>
