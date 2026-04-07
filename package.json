@@ -12,7 +12,7 @@
     "build": "vite build",
     "start": "electron .",
     "pack": "npm run build && electron-builder --config electron-builder.yml --dir",
-    "dist": "npm run build && electron-builder --config electron-builder.yml"
+    "dist": "npm run build && electron-builder --config electron-builder.yml --publish never"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.14.1",
