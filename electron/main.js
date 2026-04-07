@@ -17,6 +17,9 @@ const {
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
 const { initializeAdBlocker } = require("./src/main/adBlocker");
 
+/** Dock / taskbar / About name; must run before app "ready" (dev uses package.json name otherwise). */
+app.setName("PageCow");
+
 let settings = {
   personalWhitelist: [],
   showBookmarksBar: false,
