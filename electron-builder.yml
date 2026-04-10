@@ -20,7 +20,8 @@ linux:
   icon: build/icon.png
   executableName: pagecow-browser
   desktop:
-    StartupWMClass: pagecow-browser
+    entry:
+      StartupWMClass: pagecow-browser
   target:
     - AppImage
 nsis:
