@@ -17,6 +17,10 @@ win:
     - nsis
 linux:
   category: Office
+  icon: build/icon.png
+  executableName: pagecow-browser
+  desktop:
+    StartupWMClass: pagecow-browser
   target:
     - AppImage
 nsis:
