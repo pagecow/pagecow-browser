@@ -1,5 +1,6 @@
 appId: com.pagecow.browser
 productName: PageCow
+afterPack: scripts/after-pack.cjs
 directories:
   output: release
   buildResources: build
@@ -8,6 +9,10 @@ files:
   - electron/**
   - blocked.json
   - package.json
+  - build/icon.png
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 mac:
   category: public.app-category.productivity
   target:
@@ -24,6 +29,7 @@ linux:
       StartupWMClass: pagecow-browser
   target:
     - AppImage
+    - deb
 nsis:
   oneClick: false
   perMachine: false

@@ -1,5 +1,10 @@
 const path = require("path");
 const { app, BrowserWindow, ipcMain, shell, Menu, MenuItem, webContents } = require("electron");
+
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("class", "pagecow-browser");
+}
+
 const {
   loadSettings,
   saveSettings,
