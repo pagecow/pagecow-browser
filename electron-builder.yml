@@ -9,7 +9,6 @@ files:
   - electron/**
   - blocked.json
   - package.json
-  - build/icon.png
 extraResources:
   - from: build/icon.png
     to: icon.png
@@ -21,7 +20,7 @@ win:
   target:
     - nsis
 linux:
-  category: Office
+  category: Network
   icon: build/icon.png
   executableName: pagecow-browser
   desktop:

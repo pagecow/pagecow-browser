@@ -3,6 +3,8 @@ const { app, BrowserWindow, ipcMain, shell, Menu, MenuItem, webContents } = requ
 
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("class", "pagecow-browser");
+  app.commandLine.appendSwitch("no-sandbox");
+  app.commandLine.appendSwitch("disable-setuid-sandbox");
 }
 
 const {
