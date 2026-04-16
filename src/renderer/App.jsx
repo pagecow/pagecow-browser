@@ -85,7 +85,7 @@ function App() {
       personalWhitelist: [],
       showBookmarksBar: false,
       bookmarks: [
-        "https://mediafire.com",
+        "https://pcloud.com",
         "https://wikipedia.org",
         "https://dictionary.com",
         "https://thesaurus.com",
