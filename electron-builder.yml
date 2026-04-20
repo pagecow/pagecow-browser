@@ -30,6 +30,8 @@ linux:
   target:
     - AppImage
     - deb
+deb:
+  afterInstall: scripts/linux/debian-postinst.sh
 nsis:
   oneClick: false
   perMachine: false
