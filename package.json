@@ -1,7 +1,7 @@
 {
   "name": "pagecow-browser",
-  "version": "1.0.10",
-  "description": "PageCow - distraction-free work-only browser",
+  "version": "1.0.11",
+  "description": "PageCow - distraction-free study-only browser",
   "main": "electron/main.js",
   "author": "PageCow <pagecow@gmail.com>",
   "license": "MIT",
