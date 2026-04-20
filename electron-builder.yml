@@ -22,7 +22,7 @@ win:
     - nsis
 linux:
   category: Office
-  icon: build/icon.png
+  icon: build/icons
   executableName: pagecow-browser
   desktop:
     entry:
