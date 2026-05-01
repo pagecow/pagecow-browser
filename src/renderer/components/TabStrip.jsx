@@ -1,14 +1,5 @@
 import { useRef, useState } from "react";
-
-function getFaviconFallbackUrl(address) {
-  if (!address) return "https://www.google.com/s2/favicons?domain=.&sz=32";
-  try {
-    const domain = new URL(address.startsWith("http") ? address : `https://${address}`).hostname;
-    return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-  } catch {
-    return `https://www.google.com/s2/favicons?domain=${address}&sz=32`;
-  }
-}
+import { useFavicon } from "../utils/favicon";
 
 function isSafeFaviconSrc(url) {
   if (!url || typeof url !== "string") return false;
@@ -17,9 +8,16 @@ function isSafeFaviconSrc(url) {
 }
 
 function TabFavicon({ tab }) {
-  const fallback = getFaviconFallbackUrl(tab.address);
-  const primary =
-    tab.faviconUrl && isSafeFaviconSrc(tab.faviconUrl) ? tab.faviconUrl.trim() : fallback;
+  // The pagecow.com favicon resolver is the only fallback we trust; the
+  // browser must not reach out to third-party CDNs (firewall hygiene).
+  const { dataUrl: cachedDataUrl } = useFavicon(tab.address);
+  const trustedPageFavicon =
+    tab.faviconUrl && isSafeFaviconSrc(tab.faviconUrl) ? tab.faviconUrl.trim() : null;
+
+  // Prefer the page's own favicon (already fetched by the webview itself),
+  // fall back to the locally cached pagecow.com bytes.
+  const primary = trustedPageFavicon || cachedDataUrl;
+  if (!primary) return <span className="browser-tab-favicon" aria-hidden="true" />;
 
   return (
     <img
@@ -29,8 +27,8 @@ function TabFavicon({ tab }) {
       draggable={false}
       onError={(e) => {
         const el = e.currentTarget;
-        if (el.src !== fallback) {
-          el.src = fallback;
+        if (cachedDataUrl && el.src !== cachedDataUrl) {
+          el.src = cachedDataUrl;
         } else {
           el.style.visibility = "hidden";
         }

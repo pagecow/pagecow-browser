@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { letterPlaceholderPalette, useFavicon } from "../utils/favicon";
 
 const BackIcon = () => (
   <svg viewBox="0 0 24 24">
@@ -40,8 +41,29 @@ const StarIcon = ({ filled }) => (
   </svg>
 );
 
-function getFaviconUrl(domain) {
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+function SuggestionFavicon({ domain }) {
+  const { dataUrl } = useFavicon(domain);
+  if (dataUrl) {
+    return (
+      <img
+        className="omnibox-suggestion-icon"
+        src={dataUrl}
+        alt=""
+        width="16"
+        height="16"
+        loading="lazy"
+      />
+    );
+  }
+  return (
+    <span
+      className="omnibox-suggestion-icon omnibox-suggestion-icon-letter"
+      style={letterPlaceholderPalette(domain)}
+      aria-hidden="true"
+    >
+      {(domain?.[0] || "?").toUpperCase()}
+    </span>
+  );
 }
 
 function Toolbar({
@@ -259,13 +281,7 @@ function Toolbar({
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
-                  <img
-                    className="omnibox-suggestion-icon"
-                    src={getFaviconUrl(domain)}
-                    alt=""
-                    width="16"
-                    height="16"
-                  />
+                  <SuggestionFavicon domain={domain} />
                   <span className="omnibox-suggestion-domain">{domain}</span>
                 </button>
               ))}

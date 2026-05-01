@@ -25,10 +25,14 @@ contextBridge.exposeInMainWorld("pagecow", {
   updateSettings: (patch) => ipcRenderer.invoke("pagecow:update-settings", patch),
   openExternal: (url) => ipcRenderer.invoke("pagecow:open-external", url),
 
+  getFavicon: (domain) => ipcRenderer.invoke("pagecow:get-favicon", domain),
+  refreshFavicon: (domain) => ipcRenderer.invoke("pagecow:refresh-favicon", domain),
+
   onBlockedNavigation: (callback) => subscribe("pagecow:blocked-navigation", callback),
   onStateChanged: (callback) => subscribe("pagecow:state-changed", callback),
   onOpenUrlInNewTab: (callback) => subscribe("pagecow:open-url-in-new-tab", callback),
   onKeyboardShortcut: (callback) => subscribe("pagecow:keyboard-shortcut", callback),
+  onFaviconUpdated: (callback) => subscribe("pagecow:favicon-updated", callback),
 
   onInspectElement: (callback) => subscribe("pagecow:inspect-element", callback),
   onDevToolsClosed: (callback) => subscribe("pagecow:devtools-closed", callback),

@@ -21,6 +21,7 @@ const {
 } = require("./src/main/whitelistEngine");
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
 const { initializeAdBlocker } = require("./src/main/adBlocker");
+const faviconCache = require("./src/main/faviconCache");
 
 let settings = {
   personalWhitelist: [],
@@ -158,7 +159,14 @@ async function createAndInitializeWindow() {
   setMainWindow(mainWindow);
   installNavigationGuards(mainWindow);
   installGuestNavigationGuards(mainWindow);
+  // Warm the favicon cache for current bookmarks so newly-launched windows
+  // can render icons on the first paint after the renderer queries them.
+  faviconCache.prewarm(settings.bookmarks);
 }
+
+faviconCache.watchUpdates((payload) => {
+  sendToRenderer("pagecow:favicon-updated", payload);
+});
 
 app.on("web-contents-created", (event, contents) => {
   contents.on("before-input-event", (event, input) => {
@@ -284,7 +292,16 @@ ipcMain.handle("pagecow:update-settings", (_event, patch = {}) => {
     bookmarks: Array.isArray(patch.bookmarks) ? patch.bookmarks : settings.bookmarks
   });
   notifyStateChanged();
+  faviconCache.prewarm(settings.bookmarks);
   return { ok: true, settings: getPublicSettings() };
+});
+
+ipcMain.handle("pagecow:get-favicon", async (_event, domain) => {
+  return faviconCache.getFavicon(domain);
+});
+
+ipcMain.handle("pagecow:refresh-favicon", async (_event, domain) => {
+  return faviconCache.refreshFavicon(domain);
 });
 
 ipcMain.handle("pagecow:open-external", (_event, url) => {

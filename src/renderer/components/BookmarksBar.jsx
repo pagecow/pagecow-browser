@@ -1,13 +1,44 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { displayNameForDomain } from "../data/domainDisplayName";
+import {
+  letterPlaceholderPalette,
+  refreshFavicon,
+  useFavicon
+} from "../utils/favicon";
 
-function getFaviconUrl(url) {
-  try {
-    const domain = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
-    return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-  } catch {
-    return `https://www.google.com/s2/favicons?domain=${url}&sz=32`;
+function BookmarkLetterIcon({ domain }) {
+  const letter = (domain?.[0] || "?").toUpperCase();
+  const palette = useMemo(() => letterPlaceholderPalette(domain), [domain]);
+  return (
+    <span
+      className="bookmark-icon bookmark-icon-letter"
+      style={palette}
+      aria-hidden="true"
+    >
+      {letter}
+    </span>
+  );
+}
+
+function BookmarkIcon({ url }) {
+  const { dataUrl, domain } = useFavicon(url);
+  if (dataUrl) {
+    return (
+      <img
+        className="bookmark-icon"
+        src={dataUrl}
+        alt=""
+        draggable={false}
+        loading="lazy"
+        width="16"
+        height="16"
+      />
+    );
   }
+  // Local letter fallback while loading and for off-whitelist (HTTP 404) or
+  // network errors. The pagecow.com placeholder also gets surfaced as a
+  // dataUrl above; this branch only fires when we have no bytes at all.
+  return <BookmarkLetterIcon domain={domain} />;
 }
 
 function BookmarksBar({ domains = [], onNavigate, onNavigateNewTab, onReorder, onRemove }) {
@@ -122,7 +153,7 @@ function BookmarksBar({ domains = [], onNavigate, onNavigateNewTab, onReorder, o
             onContextMenu={(e) => handleContextMenu(e, url)}
             title={url}
           >
-            <img className="bookmark-icon" src={getFaviconUrl(url)} alt="" />
+            <BookmarkIcon url={url} />
             <span className="bookmark-label">{displayNameForDomain(url)}</span>
           </button>
         ))}
@@ -144,6 +175,17 @@ function BookmarksBar({ domains = [], onNavigate, onNavigateNewTab, onReorder, o
             }}
           >
             Open in new tab
+          </button>
+          <button
+            type="button"
+            className="context-menu-item"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              refreshFavicon(contextMenu.url);
+              closeMenu();
+            }}
+          >
+            Refresh icon
           </button>
           <button
             type="button"
