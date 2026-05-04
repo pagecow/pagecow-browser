@@ -1,5 +1,6 @@
+const fs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, ipcMain, shell, Menu, MenuItem, webContents } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Menu, MenuItem, session, webContents } = require("electron");
 
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("class", "pagecow-browser");
@@ -22,6 +23,9 @@ const {
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
 const { initializeAdBlocker } = require("./src/main/adBlocker");
 const faviconCache = require("./src/main/faviconCache");
+
+const activeDownloads = new Map();
+let nextDownloadId = 1;
 
 let settings = {
   personalWhitelist: [],
@@ -129,13 +133,38 @@ function installGuestNavigationGuards(mainWindow) {
       }
     };
 
+    // Server-side redirects (e.g., download CDNs, OAuth callbacks) often go to
+    // hosts that aren't on the whitelist. If the user already navigated to a
+    // whitelisted page, trust the redirect chain so downloads and sign-ins work.
+    const allowRedirectFromWhitelistedSource = (event, url) => {
+      const sourceUrl = guestContents.getURL();
+      if (sourceUrl && allowOrBlockNavigation(sourceUrl)) {
+        return;
+      }
+      preventBlockedNavigation(event, url);
+    };
+
     guestContents.on("will-navigate", preventBlockedNavigation);
-    guestContents.on("will-redirect", preventBlockedNavigation);
+    guestContents.on("will-redirect", allowRedirectFromWhitelistedSource);
 
     guestContents.on("context-menu", (_e, params) => {
       if (guestContents.getURL().startsWith("devtools://")) return;
 
       const menu = new Menu();
+
+      const isImage = params.mediaType === "image" && params.srcURL;
+      if (isImage) {
+        menu.append(new MenuItem({
+          label: "Save Image As\u2026",
+          click: () => {
+            try {
+              guestContents.downloadURL(params.srcURL);
+            } catch (_e) {}
+          }
+        }));
+        menu.append(new MenuItem({ type: "separator" }));
+      }
+
       menu.append(new MenuItem({
         label: "Preview on Other Devices",
         click: () => sendToRenderer("pagecow:toggle-device-toolbar")
@@ -150,6 +179,109 @@ function installGuestNavigationGuards(mainWindow) {
       menu.popup();
     });
   });
+}
+
+function getUniqueSavePath(directory, filename) {
+  const safeName = (filename && filename.trim()) || "download";
+  const ext = path.extname(safeName);
+  const base = path.basename(safeName, ext);
+  let candidate = path.join(directory, safeName);
+  let counter = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(directory, `${base} (${counter})${ext}`);
+    counter += 1;
+  }
+  return candidate;
+}
+
+function getDownloadInitiatorUrl(item, sourceWebContents) {
+  try {
+    if (sourceWebContents && !sourceWebContents.isDestroyed()) {
+      const url = sourceWebContents.getURL();
+      if (url) return url;
+    }
+  } catch (_e) {}
+  try {
+    return item.getURL();
+  } catch (_e) {
+    return "";
+  }
+}
+
+function isDownloadAllowed(item, sourceWebContents) {
+  // Allow the download if either the page that triggered it OR the download
+  // URL itself is on the whitelist (this covers downloads served from CDN
+  // hosts that aren't directly whitelisted but were reached from a
+  // whitelisted page like github.com).
+  const initiatorUrl = getDownloadInitiatorUrl(item, sourceWebContents);
+  if (initiatorUrl && allowOrBlockNavigation(initiatorUrl)) return true;
+  try {
+    if (allowOrBlockNavigation(item.getURL())) return true;
+  } catch (_e) {}
+  return false;
+}
+
+function broadcastDownloadEvent(channel, payload) {
+  sendToRenderer(channel, payload);
+}
+
+function handleWillDownload(event, item, sourceWebContents) {
+  if (!isDownloadAllowed(item, sourceWebContents)) {
+    item.cancel();
+    sendToRenderer("pagecow:blocked-navigation", { url: item.getURL() });
+    return;
+  }
+
+  const id = nextDownloadId++;
+  const downloadsDir = app.getPath("downloads");
+  try {
+    fs.mkdirSync(downloadsDir, { recursive: true });
+  } catch (_e) {}
+
+  const savePath = getUniqueSavePath(downloadsDir, item.getFilename());
+  item.setSavePath(savePath);
+
+  activeDownloads.set(id, item);
+
+  const baseInfo = {
+    id,
+    filename: path.basename(savePath),
+    url: item.getURL(),
+    savePath,
+    totalBytes: item.getTotalBytes(),
+    startedAt: Date.now()
+  };
+
+  broadcastDownloadEvent("pagecow:download-started", baseInfo);
+
+  item.on("updated", (_e, state) => {
+    broadcastDownloadEvent("pagecow:download-updated", {
+      id,
+      state,
+      receivedBytes: item.getReceivedBytes(),
+      totalBytes: item.getTotalBytes(),
+      isPaused: item.isPaused()
+    });
+  });
+
+  item.once("done", (_e, state) => {
+    activeDownloads.delete(id);
+    broadcastDownloadEvent("pagecow:download-completed", {
+      id,
+      state,
+      savePath,
+      filename: path.basename(savePath),
+      url: item.getURL(),
+      totalBytes: item.getTotalBytes(),
+      receivedBytes: item.getReceivedBytes()
+    });
+  });
+}
+
+function installDownloadHandler() {
+  // Webviews share the default session unless a partition is set, so this one
+  // listener captures downloads triggered from any tab.
+  session.defaultSession.on("will-download", handleWillDownload);
 }
 
 async function createAndInitializeWindow() {
@@ -188,6 +320,7 @@ app.on("web-contents-created", (event, contents) => {
 
 app.whenReady().then(async () => {
   await initializeAdBlocker();
+  installDownloadHandler();
   await createAndInitializeWindow();
 
   app.on("activate", async () => {
@@ -339,5 +472,29 @@ ipcMain.handle("pagecow:close-devtools", (_event, { guestWebContentsId }) => {
       guest.closeDevTools();
     }
   } catch (e) {}
+  return { ok: true };
+});
+
+ipcMain.handle("pagecow:open-download", async (_event, savePath) => {
+  if (typeof savePath !== "string" || !savePath) return { ok: false };
+  if (!fs.existsSync(savePath)) return { ok: false, reason: "missing" };
+  const error = await shell.openPath(savePath);
+  if (error) return { ok: false, reason: error };
+  return { ok: true };
+});
+
+ipcMain.handle("pagecow:reveal-download", (_event, savePath) => {
+  if (typeof savePath !== "string" || !savePath) return { ok: false };
+  if (!fs.existsSync(savePath)) return { ok: false, reason: "missing" };
+  shell.showItemInFolder(savePath);
+  return { ok: true };
+});
+
+ipcMain.handle("pagecow:cancel-download", (_event, id) => {
+  const item = activeDownloads.get(id);
+  if (!item) return { ok: false, reason: "not_found" };
+  try {
+    item.cancel();
+  } catch (_e) {}
   return { ok: true };
 });

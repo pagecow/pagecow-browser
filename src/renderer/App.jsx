@@ -5,6 +5,7 @@ import BookmarksBar from "./components/BookmarksBar";
 import BlockedPage from "./components/BlockedPage";
 import SettingsPage from "./components/SettingsPage";
 import FindBar from "./components/FindBar";
+import DownloadsTray from "./components/DownloadsTray";
 
 let nextTabId = 1;
 
@@ -107,6 +108,7 @@ function App() {
   const [devToolsHeight, setDevToolsHeight] = useState(300);
   const [devToolsKey, setDevToolsKey] = useState(0);
   const [deviceMode, setDeviceMode] = useState(null);
+  const [downloads, setDownloads] = useState([]);
   const devToolsStateRef = useRef(null);
   const devToolsAttached = useRef(false);
   const webviewRefs = useRef(new Map());
@@ -367,6 +369,95 @@ function App() {
       closeDevTools();
     }
   }, [tabs, devToolsState, closeDevTools]);
+
+  useEffect(() => {
+    if (!window.pagecow?.onDownloadStarted) return undefined;
+
+    const unsubStarted = window.pagecow.onDownloadStarted((payload) => {
+      if (!payload || typeof payload.id !== "number") return;
+      setDownloads((previous) => {
+        const filtered = previous.filter((d) => d.id !== payload.id);
+        const next = [
+          {
+            ...payload,
+            status: "in_progress",
+            isPaused: false,
+            receivedBytes: 0
+          },
+          ...filtered
+        ];
+        return next.slice(0, 8);
+      });
+    });
+
+    const unsubUpdated = window.pagecow.onDownloadUpdated((payload) => {
+      if (!payload || typeof payload.id !== "number") return;
+      setDownloads((previous) =>
+        previous.map((d) => {
+          if (d.id !== payload.id) return d;
+          return {
+            ...d,
+            status: "in_progress",
+            receivedBytes: payload.receivedBytes ?? d.receivedBytes,
+            totalBytes: payload.totalBytes || d.totalBytes,
+            isPaused: !!payload.isPaused
+          };
+        })
+      );
+    });
+
+    const unsubCompleted = window.pagecow.onDownloadCompleted((payload) => {
+      if (!payload || typeof payload.id !== "number") return;
+      setDownloads((previous) =>
+        previous.map((d) => {
+          if (d.id !== payload.id) return d;
+          return {
+            ...d,
+            status: payload.state || "completed",
+            receivedBytes: payload.receivedBytes ?? d.receivedBytes,
+            totalBytes: payload.totalBytes || d.totalBytes,
+            savePath: payload.savePath || d.savePath,
+            filename: payload.filename || d.filename
+          };
+        })
+      );
+    });
+
+    return () => {
+      if (typeof unsubStarted === "function") unsubStarted();
+      if (typeof unsubUpdated === "function") unsubUpdated();
+      if (typeof unsubCompleted === "function") unsubCompleted();
+    };
+  }, []);
+
+  const handleOpenDownload = useCallback((download) => {
+    if (!download?.savePath) return;
+    window.pagecow?.openDownload?.(download.savePath);
+  }, []);
+
+  const handleRevealDownload = useCallback((download) => {
+    if (!download?.savePath) return;
+    window.pagecow?.revealDownload?.(download.savePath);
+  }, []);
+
+  const handleCancelDownload = useCallback((download) => {
+    if (!download) return;
+    window.pagecow?.cancelDownload?.(download.id);
+    setDownloads((previous) =>
+      previous.map((d) =>
+        d.id === download.id ? { ...d, status: "cancelled" } : d
+      )
+    );
+  }, []);
+
+  const handleDismissDownload = useCallback((download) => {
+    if (!download) return;
+    setDownloads((previous) => previous.filter((d) => d.id !== download.id));
+  }, []);
+
+  const handleClearDownloads = useCallback(() => {
+    setDownloads((previous) => previous.filter((d) => d.status === "in_progress"));
+  }, []);
 
   const handleDevToolsRef = useCallback((node) => {
     devToolsAttached.current = false;
@@ -848,6 +939,14 @@ function App() {
             </div>
           )}
         </div>
+        <DownloadsTray
+          downloads={downloads}
+          onOpen={handleOpenDownload}
+          onReveal={handleRevealDownload}
+          onCancel={handleCancelDownload}
+          onDismiss={handleDismissDownload}
+          onClearAll={handleClearDownloads}
+        />
         {devToolsState && (
           <>
             <div

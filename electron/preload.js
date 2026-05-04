@@ -38,5 +38,12 @@ contextBridge.exposeInMainWorld("pagecow", {
   onDevToolsClosed: (callback) => subscribe("pagecow:devtools-closed", callback),
   onToggleDeviceToolbar: (callback) => subscribe("pagecow:toggle-device-toolbar", callback),
   attachDevTools: (payload) => ipcRenderer.invoke("pagecow:attach-devtools", payload),
-  closeDevTools: (payload) => ipcRenderer.invoke("pagecow:close-devtools", payload)
+  closeDevTools: (payload) => ipcRenderer.invoke("pagecow:close-devtools", payload),
+
+  onDownloadStarted: (callback) => subscribe("pagecow:download-started", callback),
+  onDownloadUpdated: (callback) => subscribe("pagecow:download-updated", callback),
+  onDownloadCompleted: (callback) => subscribe("pagecow:download-completed", callback),
+  openDownload: (savePath) => ipcRenderer.invoke("pagecow:open-download", savePath),
+  revealDownload: (savePath) => ipcRenderer.invoke("pagecow:reveal-download", savePath),
+  cancelDownload: (id) => ipcRenderer.invoke("pagecow:cancel-download", id)
 });
