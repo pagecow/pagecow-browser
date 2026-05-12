@@ -6,6 +6,61 @@ if (process.platform === "linux") {
   app.commandLine.appendSwitch("class", "pagecow-browser");
 }
 
+// When PageCow is set as the default browser and the user clicks a link
+// elsewhere on the system, the OS launches us with the URL as a CLI argument
+// (Linux/Windows) or via the "open-url" event (macOS). Without a single-instance
+// lock, a second Electron process starts and the URL is lost. Acquire the lock
+// up front; if we don't get it, this process is a duplicate launch and Electron
+// will deliver our argv to the original instance via the "second-instance" event.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+
+// URL captured before the renderer is ready. The renderer claims it on startup
+// via pagecow:get-state and uses it as the initial tab address.
+let pendingNavigationUrl = null;
+
+function isOpenableUrl(value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch (_e) {
+    return false;
+  }
+}
+
+function extractUrlFromArgv(argv) {
+  if (!Array.isArray(argv)) return null;
+  for (const arg of argv) {
+    if (typeof arg !== "string") continue;
+    if (arg.startsWith("-")) continue; // skip Chromium/Electron switches
+    if (isOpenableUrl(arg)) return arg.trim();
+  }
+  return null;
+}
+
+function deliverUrlToRenderer(url) {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingNavigationUrl = url;
+    return;
+  }
+
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+
+  if (mainWindow.webContents.isLoading()) {
+    pendingNavigationUrl = url;
+    return;
+  }
+
+  mainWindow.webContents.send("pagecow:open-url-in-new-tab", { url });
+}
+
 const {
   loadSettings,
   saveSettings,
@@ -300,6 +355,35 @@ faviconCache.watchUpdates((payload) => {
   sendToRenderer("pagecow:favicon-updated", payload);
 });
 
+// On Linux/Windows the OS appends the URL to argv when launching the default
+// browser. Capture it before window creation so it lands in the initial tab.
+pendingNavigationUrl = extractUrlFromArgv(process.argv);
+
+app.on("second-instance", (_event, argv) => {
+  const url = extractUrlFromArgv(argv);
+  if (url) {
+    deliverUrlToRenderer(url);
+    return;
+  }
+  // No URL was provided (user just relaunched). Surface the existing window.
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
+// macOS dispatches link clicks via "open-url" rather than argv.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  if (!isOpenableUrl(url)) return;
+  if (!app.isReady()) {
+    pendingNavigationUrl = url;
+    return;
+  }
+  deliverUrlToRenderer(url);
+});
+
 app.on("web-contents-created", (event, contents) => {
   contents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" && (input.control || input.meta) && !input.alt) {
@@ -336,11 +420,16 @@ app.on("window-all-closed", () => {
   }
 });
 
-ipcMain.handle("pagecow:get-state", () => ({
-  settings: getPublicSettings(),
-  whitelist: getWhitelistSnapshot(),
-  version: app.getVersion()
-}));
+ipcMain.handle("pagecow:get-state", () => {
+  const claimedPendingUrl = pendingNavigationUrl;
+  pendingNavigationUrl = null;
+  return {
+    settings: getPublicSettings(),
+    whitelist: getWhitelistSnapshot(),
+    version: app.getVersion(),
+    pendingNavigationUrl: claimedPendingUrl
+  };
+});
 
 ipcMain.handle("pagecow:navigate", (_event, rawInput) => {
   const normalized = toCanonicalUrl(rawInput);

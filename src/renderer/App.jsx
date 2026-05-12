@@ -243,6 +243,27 @@ function App() {
       const initialState = await window.pagecow.getState();
       setState(initialState);
       setLoading(false);
+
+      // The OS launched us with a URL (we're the default browser, or the user
+      // clicked a link elsewhere on the system). Replace the empty home tab
+      // with that URL instead of opening a separate tab so it behaves like a
+      // normal browser launch.
+      if (initialState?.pendingNavigationUrl) {
+        const url = initialState.pendingNavigationUrl;
+        const initialTabId = initialTabRef.current?.id;
+        if (initialTabId) {
+          replaceBrowserView(initialTabId, url);
+          setActiveTabId(initialTabId);
+          setPanelView("tab");
+        } else {
+          openTab({
+            type: "browser",
+            address: url,
+            title: getTabTitleFromUrl(url),
+            faviconUrl: null
+          });
+        }
+      }
     }
 
     bootstrapState();
@@ -312,7 +333,7 @@ function App() {
       if (typeof unsubShortcut === "function") unsubShortcut();
       if (typeof unsubOpenInNewTab === "function") unsubOpenInNewTab();
     };
-  }, [openTab]);
+  }, [openTab, replaceBrowserView]);
 
   useEffect(() => {
     function handleKeyDown(event) {

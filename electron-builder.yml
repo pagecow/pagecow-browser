@@ -21,12 +21,19 @@ win:
   target:
     - nsis
 linux:
-  category: Office
+  category: Network
   icon: build/icons
   executableName: pagecow-browser
+  # Register as a web browser so the OS lets the user pick PageCow as the
+  # default handler for http/https links. Exec defaults to "%U" which forwards
+  # the clicked URL as a CLI argument; the main process parses it from argv.
+  mimeTypes:
+    - x-scheme-handler/http
+    - x-scheme-handler/https
   desktop:
     entry:
       StartupWMClass: pagecow-browser
+      Categories: Network;WebBrowser;
   target:
     - AppImage
     - deb
