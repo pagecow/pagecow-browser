@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld("pagecow", {
   onOpenUrlInNewTab: (callback) => subscribe("pagecow:open-url-in-new-tab", callback),
   onKeyboardShortcut: (callback) => subscribe("pagecow:keyboard-shortcut", callback),
   onFaviconUpdated: (callback) => subscribe("pagecow:favicon-updated", callback),
+  onPageCrashed: (callback) => subscribe("pagecow:page-crashed", callback),
+  onPageResponsive: (callback) => subscribe("pagecow:page-responsive", callback),
+  clearBrowsingData: () => ipcRenderer.invoke("pagecow:clear-browsing-data"),
 
   onInspectElement: (callback) => subscribe("pagecow:inspect-element", callback),
   onDevToolsClosed: (callback) => subscribe("pagecow:devtools-closed", callback),

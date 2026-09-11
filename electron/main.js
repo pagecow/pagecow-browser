@@ -78,6 +78,7 @@ const {
 const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/window");
 const { initializeAdBlocker } = require("./src/main/adBlocker");
 const faviconCache = require("./src/main/faviconCache");
+const { appendSupportLog } = require("./src/main/supportLog");
 
 const activeDownloads = new Map();
 let nextDownloadId = 1;
@@ -129,6 +130,71 @@ function notifyStateChanged() {
   });
 }
 
+function safeGetUrl(contents) {
+  try {
+    if (!contents || contents.isDestroyed()) return "";
+    return contents.getURL() || "";
+  } catch (_e) {
+    return "";
+  }
+}
+
+function describeWebContents(contents) {
+  try {
+    if (!contents || contents.isDestroyed()) return "webContents=unknown";
+    return `webContents=${contents.id} type=${contents.getType()}`;
+  } catch (_e) {
+    return "webContents=unknown";
+  }
+}
+
+// Blocked navigations are both surfaced in the UI and written to support.log so
+// remote support can see what a customer's machine tried to open.
+function reportBlockedNavigation(url, sourceContents) {
+  appendSupportLog(
+    `blocked-navigation url=${url || ""} ${describeWebContents(sourceContents)} source-url=${safeGetUrl(sourceContents)}`
+  );
+
+  const payload = { url };
+  if (sourceContents && !sourceContents.isDestroyed() && sourceContents.getType() === "webview") {
+    payload.sourceWebContentsId = sourceContents.id;
+  }
+  sendToRenderer("pagecow:blocked-navigation", payload);
+}
+
+// Guest webviews are the only webContents the renderer can map back to a tab,
+// so crash/failure notifications are limited to those.
+function notifyPageCrashed(sourceContents, payload) {
+  if (!sourceContents || sourceContents.isDestroyed()) return;
+  if (sourceContents.getType() !== "webview") return;
+  sendToRenderer("pagecow:page-crashed", {
+    ...payload,
+    sourceWebContentsId: sourceContents.id
+  });
+}
+
+function notifyPageResponsive(sourceContents) {
+  if (!sourceContents || sourceContents.isDestroyed()) return;
+  if (sourceContents.getType() !== "webview") return;
+  sendToRenderer("pagecow:page-responsive", {
+    sourceWebContentsId: sourceContents.id
+  });
+}
+
+// Chromium reports "responsive" immediately after "unresponsive" even while the
+// renderer is still hung, so a plain responsive event can't be trusted to clear
+// the recovery panel. Run a trivial script in the guest instead: it can only
+// resolve once the page's main thread is actually running again.
+function confirmGuestResponsive(guestContents) {
+  if (!guestContents || guestContents.isDestroyed()) return;
+  if (guestContents.getType() !== "webview") return;
+
+  guestContents
+    .executeJavaScript("true")
+    .then(() => notifyPageResponsive(guestContents))
+    .catch(() => {});
+}
+
 function allowOrBlockNavigation(url) {
   if (url.startsWith("devtools://")) return true;
   if (DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL)) return true;
@@ -144,7 +210,7 @@ function installNavigationGuards(mainWindow) {
     if (allowOrBlockNavigation(url)) {
       return { action: "allow" };
     }
-    sendToRenderer("pagecow:blocked-navigation", { url });
+    reportBlockedNavigation(url, wc);
     return { action: "deny" };
   });
 
@@ -154,7 +220,7 @@ function installNavigationGuards(mainWindow) {
 
     if (!allowOrBlockNavigation(url)) {
       event.preventDefault();
-      sendToRenderer("pagecow:blocked-navigation", { url });
+      reportBlockedNavigation(url, wc);
     }
   });
 }
@@ -164,10 +230,7 @@ function installGuestNavigationGuards(mainWindow) {
     guestContents.setWindowOpenHandler(({ url }) => {
       if (url.startsWith("devtools://")) return { action: "allow" };
       if (!allowOrBlockNavigation(url)) {
-        sendToRenderer("pagecow:blocked-navigation", {
-          url,
-          sourceWebContentsId: guestContents.id
-        });
+        reportBlockedNavigation(url, guestContents);
         return { action: "deny" };
       }
 
@@ -181,10 +244,7 @@ function installGuestNavigationGuards(mainWindow) {
     const preventBlockedNavigation = (event, url) => {
       if (!allowOrBlockNavigation(url)) {
         event.preventDefault();
-        sendToRenderer("pagecow:blocked-navigation", {
-          url,
-          sourceWebContentsId: guestContents.id
-        });
+        reportBlockedNavigation(url, guestContents);
       }
     };
 
@@ -236,6 +296,91 @@ function installGuestNavigationGuards(mainWindow) {
   });
 }
 
+// A crashed or wedged renderer used to leave the user staring at a silent blank
+// page. Every failure path is now written to support.log and surfaced in the UI
+// so the user gets a Reload button instead of a dead tab.
+function installCrashHandlers(mainWindow) {
+  const wc = mainWindow.webContents;
+  let mainWindowReloads = 0;
+
+  wc.on("did-finish-load", () => {
+    mainWindowReloads = 0;
+  });
+
+  // The window's own renderer hosts the entire UI. If it dies there is nothing
+  // left to show a panel in, so the only recovery is a fresh load of the UI.
+  wc.on("render-process-gone", (_event, details) => {
+    const reason = details && details.reason;
+    if (!reason || reason === "clean-exit") return;
+
+    appendSupportLog(
+      `renderer-gone main-window reason=${reason} exitCode=${details.exitCode}`
+    );
+
+    if (mainWindow.isDestroyed()) return;
+    if (mainWindowReloads >= 3) {
+      appendSupportLog("renderer-gone main-window recovery-skipped reload-attempts-exhausted");
+      return;
+    }
+    mainWindowReloads += 1;
+    mainWindow.webContents.reload();
+  });
+
+  wc.on("unresponsive", () => {
+    appendSupportLog("renderer-unresponsive main-window");
+  });
+
+  wc.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    if (errorCode === -3) return; // ERR_ABORTED — the user canceled the load.
+    appendSupportLog(
+      `load-failed main-window url=${validatedURL || ""} error=${errorDescription || ""} code=${errorCode}`
+    );
+  });
+
+  wc.on("did-attach-webview", (_event, guestContents) => {
+    guestContents.on("render-process-gone", (_event, details) => {
+      const reason = details && details.reason;
+      if (!reason || reason === "clean-exit") return;
+
+      const url = safeGetUrl(guestContents);
+      appendSupportLog(
+        `renderer-gone webview reason=${reason} exitCode=${details.exitCode} url=${url}`
+      );
+      notifyPageCrashed(guestContents, {
+        type: "render-process-gone",
+        reason,
+        exitCode: details.exitCode,
+        url
+      });
+    });
+
+    guestContents.on("unresponsive", () => {
+      const url = safeGetUrl(guestContents);
+      appendSupportLog(`renderer-unresponsive webview url=${url}`);
+      notifyPageCrashed(guestContents, { type: "unresponsive", url });
+    });
+
+    guestContents.on("responsive", () => {
+      confirmGuestResponsive(guestContents);
+    });
+
+    guestContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return;
+      if (errorCode === -3) return; // ERR_ABORTED — the user canceled the load.
+      appendSupportLog(
+        `load-failed webview url=${validatedURL || ""} error=${errorDescription || ""} code=${errorCode}`
+      );
+      notifyPageCrashed(guestContents, {
+        type: "did-fail-load",
+        errorCode,
+        errorDescription,
+        url: validatedURL || safeGetUrl(guestContents)
+      });
+    });
+  });
+}
+
 function getUniqueSavePath(directory, filename) {
   const safeName = (filename && filename.trim()) || "download";
   const ext = path.extname(safeName);
@@ -283,7 +428,7 @@ function broadcastDownloadEvent(channel, payload) {
 function handleWillDownload(event, item, sourceWebContents) {
   if (!isDownloadAllowed(item, sourceWebContents)) {
     item.cancel();
-    sendToRenderer("pagecow:blocked-navigation", { url: item.getURL() });
+    reportBlockedNavigation(item.getURL(), sourceWebContents);
     return;
   }
 
@@ -346,6 +491,7 @@ async function createAndInitializeWindow() {
   setMainWindow(mainWindow);
   installNavigationGuards(mainWindow);
   installGuestNavigationGuards(mainWindow);
+  installCrashHandlers(mainWindow);
   // Warm the favicon cache for current bookmarks so newly-launched windows
   // can render icons on the first paint after the renderer queries them.
   faviconCache.prewarm(settings.bookmarks);
@@ -403,6 +549,9 @@ app.on("web-contents-created", (event, contents) => {
 });
 
 app.whenReady().then(async () => {
+  appendSupportLog(
+    `app-start version=${app.getVersion()} platform=${process.platform} arch=${process.arch}`
+  );
   await initializeAdBlocker();
   installDownloadHandler();
   await createAndInitializeWindow();
@@ -524,6 +673,21 @@ ipcMain.handle("pagecow:get-favicon", async (_event, domain) => {
 
 ipcMain.handle("pagecow:refresh-favicon", async (_event, domain) => {
   return faviconCache.refreshFavicon(domain);
+});
+
+// Customers have no other recovery path when a site is stuck on stale or
+// broken state. Clearing the default session covers every tab because the
+// webviews share it (no partition is set).
+ipcMain.handle("pagecow:clear-browsing-data", async () => {
+  try {
+    await session.defaultSession.clearStorageData();
+    await session.defaultSession.clearCache();
+    appendSupportLog("browsing-data-cleared");
+    return { ok: true };
+  } catch (error) {
+    appendSupportLog(`browsing-data-clear-failed error=${(error && error.message) || error}`);
+    return { ok: false, message: "Could not clear browsing data. Please try again." };
+  }
 });
 
 ipcMain.handle("pagecow:open-external", (_event, url) => {

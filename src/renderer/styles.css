@@ -948,6 +948,25 @@ a:hover {
 }
 
 
+/* ─── Crash / load-failure Page ─── */
+
+.crash-url {
+  margin: 16px 0 24px;
+}
+
+.crash-url .blocked-domain {
+  margin: 0;
+}
+
+.crash-detail {
+  margin-top: 8px;
+  font-family: "Roboto Mono", monospace;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  word-break: break-word;
+}
+
+
 /* ─── Buttons ─── */
 
 .btn {
@@ -1102,6 +1121,35 @@ a:hover {
 
 .settings-message.success {
   color: var(--success);
+}
+
+.settings-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-actions-row .settings-message {
+  margin-top: 0;
+}
+
+.settings-confirm {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  background: var(--bg-secondary);
+}
+
+.settings-confirm p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.settings-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 function SettingsPage({
   settings,
@@ -8,7 +8,10 @@ function SettingsPage({
   onToggleBookmarksBar,
   onClose,
   onUpdateSettings,
+  onClearBrowsingData,
 }) {
+  const [clearStatus, setClearStatus] = useState("idle");
+
   const fullWhitelist = useMemo(() => {
     const list = [
       ...preApprovedDomains.map((domain) => ({ domain, type: "Pre-approved" })),
@@ -22,6 +25,12 @@ function SettingsPage({
       (b) => b !== domain,
     );
     onUpdateSettings({ bookmarks: nextBookmarks });
+  };
+
+  const handleConfirmClear = async () => {
+    setClearStatus("clearing");
+    const result = await onClearBrowsingData?.();
+    setClearStatus(result?.ok ? "done" : "error");
   };
 
   return (
@@ -58,6 +67,60 @@ function SettingsPage({
               </label>
             </div>
           </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Browsing data</h3>
+          <p className="settings-section-hint">
+            Sign out of sites and clear saved cookies, caches and site data. Use
+            this when a site is stuck on stale or broken state.
+          </p>
+          {clearStatus === "confirm" || clearStatus === "clearing" ? (
+            <div className="settings-confirm">
+              <p>
+                This signs you out of every site and removes cached files and
+                stored data. It cannot be undone.
+              </p>
+              <div className="settings-confirm-actions">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setClearStatus("idle")}
+                  disabled={clearStatus === "clearing"}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-danger clear-data-confirm"
+                  onClick={handleConfirmClear}
+                  disabled={clearStatus === "clearing"}
+                >
+                  {clearStatus === "clearing" ? "Clearing…" : "Clear browsing data"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="settings-actions-row">
+              <button
+                type="button"
+                className="btn btn-sm btn-danger clear-data"
+                onClick={() => setClearStatus("confirm")}
+              >
+                Clear browsing data
+              </button>
+              {clearStatus === "done" ? (
+                <span className="settings-message success">
+                  Browsing data cleared.
+                </span>
+              ) : null}
+              {clearStatus === "error" ? (
+                <span className="settings-message error">
+                  Could not clear browsing data. Please try again.
+                </span>
+              ) : null}
+            </div>
+          )}
         </section>
 
         <section className="settings-section">

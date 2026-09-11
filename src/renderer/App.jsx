@@ -3,6 +3,7 @@ import Toolbar from "./components/Toolbar";
 import TabStrip from "./components/TabStrip";
 import BookmarksBar from "./components/BookmarksBar";
 import BlockedPage from "./components/BlockedPage";
+import CrashPage from "./components/CrashPage";
 import SettingsPage from "./components/SettingsPage";
 import FindBar from "./components/FindBar";
 import DownloadsTray from "./components/DownloadsTray";
@@ -81,6 +82,7 @@ function App() {
   const [activeTabId, setActiveTabId] = useState(initialTabRef.current.id);
   const [panelView, setPanelView] = useState("tab");
   const [blockedUrl, setBlockedUrl] = useState("");
+  const [crashInfo, setCrashInfo] = useState(null);
   const [state, setState] = useState({
     settings: {
       personalWhitelist: [],
@@ -110,6 +112,7 @@ function App() {
   const [deviceMode, setDeviceMode] = useState(null);
   const [downloads, setDownloads] = useState([]);
   const devToolsStateRef = useRef(null);
+  const crashInfoRef = useRef(null);
   const devToolsAttached = useRef(false);
   const webviewRefs = useRef(new Map());
   const attachedWebviews = useRef(new Set());
@@ -233,6 +236,8 @@ function App() {
     let unsubBlocked;
     let unsubState;
     let unsubOpenInNewTab;
+    let unsubCrashed;
+    let unsubResponsive;
 
     async function bootstrapState() {
       if (!window.pagecow?.getState) {
@@ -285,6 +290,46 @@ function App() {
       setPanelView("blocked");
     });
 
+    // The guest renderer for a tab crashed, stopped answering, or failed to
+    // load. Show the recovery panel instead of a silent blank page.
+    if (window.pagecow.onPageCrashed) {
+      unsubCrashed = window.pagecow.onPageCrashed((payload) => {
+        const sourceTabId = payload?.sourceWebContentsId
+          ? webContentsToTabId.current.get(payload.sourceWebContentsId)
+          : null;
+
+        // No tab owns this webContents (e.g. the DevTools webview) — the main
+        // process still logged it for support.
+        if (!sourceTabId) return;
+
+        setActiveTabId(sourceTabId);
+        setCrashInfo({
+          tabId: sourceTabId,
+          kind: payload.type || "render-process-gone",
+          reason: payload.reason || "",
+          errorCode: payload.errorCode,
+          errorDescription: payload.errorDescription || "",
+          url: payload.url || ""
+        });
+        setPanelView("crashed");
+      });
+    }
+
+    if (window.pagecow.onPageResponsive) {
+      unsubResponsive = window.pagecow.onPageResponsive((payload) => {
+        const sourceTabId = payload?.sourceWebContentsId
+          ? webContentsToTabId.current.get(payload.sourceWebContentsId)
+          : null;
+        const current = crashInfoRef.current;
+
+        if (!sourceTabId || !current || current.tabId !== sourceTabId) return;
+        if (current.kind !== "unresponsive") return;
+
+        setCrashInfo(null);
+        setPanelView((view) => (view === "crashed" ? "tab" : view));
+      });
+    }
+
     unsubState = window.pagecow.onStateChanged((payload) => {
       setState((previous) => ({
         ...previous,
@@ -332,6 +377,8 @@ function App() {
       if (typeof unsubState === "function") unsubState();
       if (typeof unsubShortcut === "function") unsubShortcut();
       if (typeof unsubOpenInNewTab === "function") unsubOpenInNewTab();
+      if (typeof unsubCrashed === "function") unsubCrashed();
+      if (typeof unsubResponsive === "function") unsubResponsive();
     };
   }, [openTab, replaceBrowserView]);
 
@@ -350,6 +397,10 @@ function App() {
   useEffect(() => {
     devToolsStateRef.current = devToolsState;
   }, [devToolsState]);
+
+  useEffect(() => {
+    crashInfoRef.current = crashInfo;
+  }, [crashInfo]);
 
   const closeDevTools = useCallback(() => {
     const state = devToolsStateRef.current;
@@ -533,6 +584,42 @@ function App() {
     [devToolsHeight]
   );
 
+  const handleCrashReload = useCallback(() => {
+    const info = crashInfoRef.current;
+
+    setPanelView("tab");
+    setCrashInfo(null);
+    if (!info) return;
+
+    const node = webviewRefs.current.get(info.tabId);
+    let reloaded = false;
+    if (node && typeof node.reload === "function") {
+      try {
+        node.reload();
+        reloaded = true;
+      } catch (_e) {
+        reloaded = false;
+      }
+    }
+
+    if (!reloaded) {
+      // The guest is too far gone to reload in place — rebuild the tab's
+      // webview from scratch so the user still gets a working page.
+      let fallbackUrl = info.url;
+      if (node && typeof node.getURL === "function") {
+        try {
+          fallbackUrl = node.getURL() || fallbackUrl;
+        } catch (_e) {}
+      }
+      replaceBrowserView(info.tabId, fallbackUrl || "https://pagecow.com");
+    }
+  }, [replaceBrowserView]);
+
+  const handleCrashDismiss = useCallback(() => {
+    setPanelView("tab");
+    setCrashInfo(null);
+  }, []);
+
   async function handleNavigate(rawValue, targetTabId = activeTabIdRef.current) {
     if (!window.pagecow) return;
     const value = rawValue?.trim();
@@ -634,6 +721,11 @@ function App() {
       return;
     }
 
+    if (panelView === "crashed") {
+      handleCrashDismiss();
+      return;
+    }
+
     if (panelView !== "tab") {
       return;
     }
@@ -664,6 +756,9 @@ function App() {
       setPanelView("tab");
       setBlockedUrl("");
     }
+    if (panelView === "crashed") {
+      setCrashInfo(null);
+    }
     handleNavigateRef.current("https://pagecow.com", activeTabIdRef.current);
   }
 
@@ -693,6 +788,11 @@ function App() {
 
   async function handleToggleBookmarksBar(enabled) {
     await window.pagecow.updateSettings({ showBookmarksBar: enabled });
+  }
+
+  async function handleClearBrowsingData() {
+    if (!window.pagecow?.clearBrowsingData) return { ok: false };
+    return window.pagecow.clearBrowsingData();
   }
   
   async function handleToggleBookmark(url) {
@@ -780,12 +880,14 @@ function App() {
   const toolbarAddress =
     panelView === "blocked"
       ? blockedUrl
-      : activeTab?.type === "browser"
-        ? activeTab.address
-        : "";
+      : panelView === "crashed"
+        ? crashInfo?.url || activeTab?.address || ""
+        : activeTab?.type === "browser"
+          ? activeTab.address
+          : "";
 
   const toolbarCanGoBack =
-    panelView === "blocked"
+    panelView === "blocked" || panelView === "crashed"
       ? true
       : panelView !== "tab"
         ? false
@@ -799,6 +901,13 @@ function App() {
       
   const showBookmarksBar =
     (state.settings.showBookmarksBar || state.settings.bookmarks.length > 0) && panelView === "tab";
+
+  const crashStatusText =
+    crashInfo?.kind === "unresponsive"
+      ? "Not responding"
+      : crashInfo?.kind === "did-fail-load"
+        ? "Load failed"
+        : "Page crashed";
 
   if (loading || !activeTab) {
     return <div className="loading-screen">Loading...</div>;
@@ -831,7 +940,13 @@ function App() {
         onSettings={handleOpenSettings}
         onHome={handleHome}
         statusText={
-          panelView === "settings" ? "Settings" : panelView === "blocked" ? "Blocked" : ""
+          panelView === "settings"
+            ? "Settings"
+            : panelView === "blocked"
+              ? "Blocked"
+              : panelView === "crashed"
+                ? crashStatusText
+                : ""
         }
         isBookmarked={state.settings.bookmarks.includes(toolbarAddress)}
         onToggleBookmark={() => handleToggleBookmark(toolbarAddress)}
@@ -944,6 +1059,20 @@ function App() {
             </div>
           )}
 
+          {panelView === "crashed" && crashInfo && (
+            <div className="content-overlay">
+              <CrashPage
+                kind={crashInfo.kind}
+                url={crashInfo.url}
+                reason={crashInfo.reason}
+                errorCode={crashInfo.errorCode}
+                errorDescription={crashInfo.errorDescription}
+                onReload={handleCrashReload}
+                onDismiss={crashInfo.kind === "unresponsive" ? handleCrashDismiss : null}
+              />
+            </div>
+          )}
+
           {panelView === "settings" && (
             <div className="content-overlay content-overlay-scroll">
               <SettingsPage
@@ -955,6 +1084,7 @@ function App() {
                 onRemoveDomain={handleRemovePersonalDomain}
                 onToggleBookmarksBar={handleToggleBookmarksBar}
                 onUpdateSettings={(patch) => window.pagecow.updateSettings(patch)}
+                onClearBrowsingData={handleClearBrowsingData}
                 onClose={() => setPanelView("tab")}
               />
             </div>
