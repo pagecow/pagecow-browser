@@ -152,7 +152,7 @@ jobs:
             "pagecow-browser_${VERSION}_amd64.deb"
             "PageCow-${VERSION}.AppImage"
           )
-          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' > /tmp/assets.txt
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/assets.txt
           MISSING=0
           for name in "${EXPECTED[@]}"; do
             if grep -qx "$name" /tmp/assets.txt; then
