@@ -43,3 +43,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # Keep the installer name free of spaces: GitHub Actions' artifact
+  # upload/download step rewrites spaces, which renamed the released file to
+  # "PageCow.Setup.<version>.exe" and broke the site's download link. This
+  # name is also what electron-builder writes into latest.yml, so the update
+  # metadata and the release asset always agree.
+  artifactName: "${productName}-Setup-${version}.${ext}"
