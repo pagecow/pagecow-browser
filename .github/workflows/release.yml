@@ -95,6 +95,16 @@ jobs:
             spctl -a -t open --context context:primary-signature -vvv "$DMG" || true
           done
 
+      # Auto-update needs the zip payload and app-update.yml inside the app;
+      # electron-builder only writes the latter when a dmg/zip target is built.
+      - name: Verify macOS auto-update payload (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP="$(ls -d release/mac*/PageCow.app | head -1)"
+          test -f "$APP/Contents/Resources/app-update.yml"
+          cat "$APP/Contents/Resources/app-update.yml"
+          ls -la release/*.zip
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
