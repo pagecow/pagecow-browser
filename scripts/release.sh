@@ -29,9 +29,16 @@ esac
 cd "$(dirname "$0")/.."
 
 echo "==> Checking the working tree"
-if [ -n "$(git status --porcelain)" ]; then
+# Only tracked changes block a release: untracked files (scratch, MEMORY.md,
+# tmp/) are not part of what gets tagged.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "error: the working tree is dirty — commit or stash your changes first" >&2
+  git status --short --untracked-files=no >&2
   exit 1
+fi
+UNTRACKED_COUNT="$(git status --porcelain --untracked-files=all | grep -c '^??' || true)"
+if [ "$UNTRACKED_COUNT" != "0" ]; then
+  echo "note: $UNTRACKED_COUNT untracked file(s) present — they are not part of the release"
 fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
