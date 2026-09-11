@@ -74,6 +74,10 @@ These names are duplicated in `pagecow-site/lib/latest-release.ts` and in the wo
 
 ### Gotchas (learned the hard way)
 
+- **Jobs that use `gh` need a checkout or an explicit `--repo`**: the `verify`
+  job has no `actions/checkout`, so `gh release view …` failed with
+  `fatal: not a git repository` on v1.0.19 (the release itself was fine — only
+  the check failed). Always pass `--repo "$GITHUB_REPOSITORY"`.
 - **GitHub artifact upload/download rewrites spaces in file names** (spaces → dots).
   CI used to build `PageCow Setup <v>.exe`, the release asset became
   `PageCow.Setup.<v>.exe`, and the site's link 404'd for months. That is why
