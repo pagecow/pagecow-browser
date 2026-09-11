@@ -79,6 +79,7 @@ const { createMainWindow, setMainWindow, getMainWindow } = require("./src/main/w
 const { initializeAdBlocker } = require("./src/main/adBlocker");
 const faviconCache = require("./src/main/faviconCache");
 const { appendSupportLog } = require("./src/main/supportLog");
+const { autoUpdater } = require("electron-updater");
 
 const activeDownloads = new Map();
 let nextDownloadId = 1;
@@ -548,6 +549,37 @@ app.on("web-contents-created", (event, contents) => {
   });
 });
 
+// Background auto-update: quietly download a newer release and install it on
+// quit. Every outcome goes to support.log. Older builds without app-update.yml
+// (and machines whose network blocks github.com) fail quietly — browsing must
+// never depend on the update check.
+function installAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    appendSupportLog(`update-available version=${(info && info.version) || "unknown"}`);
+  });
+  autoUpdater.on("update-not-available", () => {
+    appendSupportLog("update-not-available");
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    appendSupportLog(`update-downloaded version=${(info && info.version) || "unknown"}`);
+  });
+  autoUpdater.on("error", (error) => {
+    appendSupportLog(`update-failed error=${(error && error.message) || error}`);
+  });
+
+  // Wait a few seconds so the check never slows down startup.
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+      appendSupportLog(`update-check-failed error=${(error && error.message) || error}`);
+    });
+  }, 5000);
+}
+
 app.whenReady().then(async () => {
   appendSupportLog(
     `app-start version=${app.getVersion()} platform=${process.platform} arch=${process.arch}`
@@ -555,6 +587,7 @@ app.whenReady().then(async () => {
   await initializeAdBlocker();
   installDownloadHandler();
   await createAndInitializeWindow();
+  installAutoUpdater();
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

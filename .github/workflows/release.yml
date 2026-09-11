@@ -1,9 +1,14 @@
 name: Release
 
+# Push a version tag (scripts/release.sh does this for you) and this workflow
+# builds, signs, notarizes and publishes the installers for every platform.
+# workflow_dispatch runs the build jobs without publishing — use it to test
+# signing before tagging.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,12 +22,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - name: Install Linux build dependencies
@@ -37,35 +42,118 @@ jobs:
       - name: Set version from tag
         shell: bash
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          else
+            echo "Not a version tag (${GITHUB_REF}) — building the version in package.json"
+          fi
 
+      # The certificate lives in a temporary keychain so the runner can sign
+      # without touching any permanent state. Requires the MAC_CERT_P12 secret
+      # (base64 of the Developer ID .p12) and MAC_CERT_PASSWORD.
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MAC_CERT_P12" ]; then
+            echo "::warning::MAC_CERT_P12 is not set — building an ad-hoc signed, unnotarized macOS app"
+            exit 0
+          fi
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      # electron-builder signs and notarizes the macOS app automatically when
+      # APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are present.
       - name: Build installers
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run dist
 
+      - name: Verify macOS signing (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP="$(ls -d release/mac*/PageCow.app | head -1)"
+          echo "Checking $APP"
+          codesign --verify --deep --strict "$APP"
+          spctl -a -vvv "$APP"
+          xcrun stapler validate "$APP"
+          for DMG in release/*.dmg; do
+            echo "Checking $DMG"
+            spctl -a -t open --context context:primary-signature -vvv "$DMG" || true
+          done
+
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.os }}
           path: release/*
 
   publish:
+    # Only a real version tag publishes; workflow_dispatch runs are dry runs.
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Download all installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
           path: assets
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           files: assets/*
+
+  verify:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      # The download page on pagecow.com links these exact names; fail the
+      # release instead of shipping a 404.
+      - name: Verify release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXPECTED=(
+            "PageCow-${VERSION}-arm64.dmg"
+            "PageCow-${VERSION}.dmg"
+            "PageCow-${VERSION}-arm64-mac.zip"
+            "PageCow-${VERSION}-mac.zip"
+            "PageCow-Setup-${VERSION}.exe"
+            "pagecow-browser_${VERSION}_amd64.deb"
+            "PageCow-${VERSION}.AppImage"
+          )
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' > /tmp/assets.txt
+          MISSING=0
+          for name in "${EXPECTED[@]}"; do
+            if grep -qx "$name" /tmp/assets.txt; then
+              echo "OK      $name"
+            else
+              echo "::error::missing release asset: $name"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error::release $GITHUB_REF_NAME is incomplete — see above"
+            exit 1
+          fi
+          echo "All expected assets are present."

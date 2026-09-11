@@ -13,10 +13,27 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+# electron-updater reads app-update.yml (embedded into the app) and the
+# latest*.yml files next to the installers. The build never publishes by
+# itself (CI passes --publish never); the release workflow uploads the files
+# to the GitHub Release.
+publish:
+  provider: github
+  owner: pagecow
+  repo: pagecow-browser
 mac:
   category: public.app-category.productivity
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    # electron-updater downloads the zip for automatic updates on macOS; the
+    # dmg stays the manual-install download.
+    - target: zip
+      arch:
+        - arm64
+        - x64
 win:
   target:
     - nsis
